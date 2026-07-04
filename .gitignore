@@ -7,6 +7,8 @@ backend/uploads/*
 !backend/uploads/.gitkeep
 coverage/
 backend/backups/
+frontend/dist/
+frontend/*.tsbuildinfo
 BACKUP_POLICY.md
 CLOUD_STORAGE.md
 DEPLOY_HOJE.md

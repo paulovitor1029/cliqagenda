@@ -56,7 +56,7 @@
 - [x] Isolamento entre empresas testado.
 - [x] Política de backup documentada.
 - [x] Recuperação de senha criada.
-- [x] Dados demo removidos em produção.
+- [x] Usuários, profissionais e serviços demo removidos de todos os ambientes.
 - [x] Permissões internas melhoradas.
 - [x] Guia de domínio próprio criado.
 - [x] Banco PostgreSQL em nuvem configurável por `DATABASE_URL`.

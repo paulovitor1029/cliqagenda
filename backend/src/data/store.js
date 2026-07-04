@@ -21,6 +21,7 @@ const adminConfig = process.env.DATABASE_URL
   ? dbConfig
   : { ...dbConfig, database: process.env.DB_ADMIN_DATABASE || "postgres" };
 const pool = new Pool(dbConfig);
+const UPDATE_LOCK_ID = 74190217;
 
 const defaultWorkingHours = [
   "09:00",
@@ -64,51 +65,6 @@ const defaultTheme = {
   danger: "#dc2626",
   warning: "#d97706",
   info: "#0284c7"
-};
-
-const defaultServices = [
-  { id: "svc_corte", name: "Corte masculino", price: 40, duration: 30, buffer: 5 },
-  { id: "svc_barba", name: "Barba", price: 30, duration: 25, buffer: 5 },
-  { id: "svc_combo", name: "Corte + barba", price: 65, duration: 60, buffer: 10 }
-];
-
-
-const demoBusiness = {
-  id: "biz_demo",
-  ownerId: null,
-  name: "Studio Agenda Simples",
-  slug: "studio-agenda-simples",
-  whatsapp: "11999999999",
-  businessType: "Beleza e estetica",
-  address: "Rua Exemplo, 123",
-  description: "Agenda online para profissionais de beleza e estetica.",
-  photoUrl: "",
-  theme: defaultTheme,
-  deposit: 10,
-  pixKey: "11999999999",
-  cancellationHours: 6,
-  rescheduleHours: 6,
-  allowClientCancel: true,
-  allowClientReschedule: true,
-  workingHours: defaultWorkingHours
-};
-
-const demoAdmin = {
-  id: "usr_demo_admin",
-  name: process.env.ADMIN_NAME || "Admin CliqAgenda",
-  email: process.env.ADMIN_EMAIL || "admin@cliqagenda.local",
-  password: process.env.ADMIN_PASSWORD || "admin123"
-};
-
-const demoProfessional = {
-  id: "pro_demo",
-  businessId: demoBusiness.id,
-  name: "Ana Profissional",
-  specialty: "Cabelo, unhas e atendimento estetico",
-  photoUrl: "",
-  active: true,
-  workingDays: defaultWorkingDays,
-  workingSchedule: defaultWorkingSchedule
 };
 
 let readyPromise;
@@ -316,101 +272,38 @@ async function ensureDatabase() {
         CREATE INDEX IF NOT EXISTS sessions_token_idx ON sessions (token);
       `);
 
-      if (process.env.NODE_ENV !== "production" || process.env.SEED_DEMO === "true") {
-        await seedDemo();
-      }
     })();
   }
   return readyPromise;
 }
 
-async function seedDemo() {
-  const passwordData = hashPassword(demoAdmin.password, "demo_admin_salt");
-  await pool.query(
-    `INSERT INTO users (id, name, email, role, business_id, password_hash, password_salt)
-     VALUES ($1, $2, $3, 'owner', $4, $5, $6)
-     ON CONFLICT (id) DO UPDATE SET
-       name = EXCLUDED.name,
-       email = EXCLUDED.email,
-       role = EXCLUDED.role,
-       password_hash = EXCLUDED.password_hash,
-       password_salt = EXCLUDED.password_salt,
-       business_id = COALESCE(users.business_id, EXCLUDED.business_id)`,
-    [demoAdmin.id, demoAdmin.name, demoAdmin.email, demoBusiness.id, passwordData.hash, passwordData.salt]
-  );
-
-  await pool.query(
-    `INSERT INTO businesses (
-      id, owner_id, name, slug, whatsapp, business_type, address, description, photo_url, theme, deposit, pix_key,
-      cancellation_hours, reschedule_hours, allow_client_cancel, allow_client_reschedule
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14, $15, $16)
-    ON CONFLICT (id) DO UPDATE SET
-      owner_id = COALESCE(businesses.owner_id, EXCLUDED.owner_id)`,
-    [
-      demoBusiness.id,
-      demoAdmin.id,
-      demoBusiness.name,
-      demoBusiness.slug,
-      demoBusiness.whatsapp,
-      demoBusiness.businessType,
-      demoBusiness.address,
-      demoBusiness.description,
-      demoBusiness.photoUrl,
-      JSON.stringify(normalizeTheme(demoBusiness.theme)),
-      demoBusiness.deposit,
-      demoBusiness.pixKey,
-      demoBusiness.cancellationHours,
-      demoBusiness.rescheduleHours,
-      demoBusiness.allowClientCancel,
-      demoBusiness.allowClientReschedule
-    ]
-  );
-
-  await insertWorkingHours(pool, demoBusiness.id, demoBusiness.workingHours);
-
-  await pool.query(
-    `INSERT INTO professionals (id, business_id, name, specialty, photo_url, working_days, working_schedule, active)
-     VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8)
-     ON CONFLICT (id) DO UPDATE SET
-       business_id = EXCLUDED.business_id,
-       name = EXCLUDED.name,
-       specialty = EXCLUDED.specialty,
-       photo_url = EXCLUDED.photo_url,
-       working_days = EXCLUDED.working_days,
-       working_schedule = EXCLUDED.working_schedule,
-       active = EXCLUDED.active`,
-    [demoProfessional.id, demoProfessional.businessId, demoProfessional.name, demoProfessional.specialty, demoProfessional.photoUrl, JSON.stringify(demoProfessional.workingDays), JSON.stringify(demoProfessional.workingSchedule), demoProfessional.active]
-  );
-
-  await insertProfessionalWorkingHours(pool, demoProfessional.id, demoBusiness.workingHours);
-
-  for (const service of defaultServices) {
-    await pool.query(
-      `INSERT INTO services (id, business_id, professional_id, name, price, duration, buffer, active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE)
-       ON CONFLICT (id) DO UPDATE SET professional_id = COALESCE(services.professional_id, EXCLUDED.professional_id)`,
-      [service.id, demoBusiness.id, demoProfessional.id, service.name, service.price, service.duration, service.buffer]
-    );
-  }
-}
-
-async function readDb() {
+async function readDb(queryable = pool) {
   await ensureDatabase();
-  const [users, sessions, passwordResetTokens, businesses, hours, professionalHours, professionals, services, appointments, payments, reminders, waitlist, blocks] = await Promise.all([
-    pool.query("SELECT * FROM users ORDER BY created_at"),
-    pool.query("SELECT * FROM sessions ORDER BY created_at"),
-    pool.query("SELECT * FROM password_reset_tokens ORDER BY created_at"),
-    pool.query("SELECT * FROM businesses ORDER BY created_at"),
-    pool.query("SELECT business_id, to_char(time_value, 'HH24:MI') AS time_value FROM business_working_hours ORDER BY business_id, sort_order"),
-    pool.query("SELECT professional_id, to_char(time_value, 'HH24:MI') AS time_value FROM professional_working_hours ORDER BY professional_id, sort_order"),
-    pool.query("SELECT * FROM professionals ORDER BY created_at"),
-    pool.query("SELECT * FROM services ORDER BY created_at"),
-    pool.query("SELECT * FROM appointments ORDER BY date_value, time_value"),
-    pool.query("SELECT * FROM payments ORDER BY created_at"),
-    pool.query("SELECT * FROM reminder_logs ORDER BY sent_at"),
-    pool.query("SELECT * FROM waitlist_entries ORDER BY created_at"),
-    pool.query("SELECT * FROM schedule_blocks ORDER BY date_value, start_time")
-  ]);
+  const statements = [
+    "SELECT * FROM users ORDER BY created_at",
+    "SELECT * FROM sessions ORDER BY created_at",
+    "SELECT * FROM password_reset_tokens ORDER BY created_at",
+    "SELECT * FROM businesses ORDER BY created_at",
+    "SELECT business_id, to_char(time_value, 'HH24:MI') AS time_value FROM business_working_hours ORDER BY business_id, sort_order",
+    "SELECT professional_id, to_char(time_value, 'HH24:MI') AS time_value FROM professional_working_hours ORDER BY professional_id, sort_order",
+    "SELECT * FROM professionals ORDER BY created_at",
+    "SELECT * FROM services ORDER BY created_at",
+    "SELECT * FROM appointments ORDER BY date_value, time_value",
+    "SELECT * FROM payments ORDER BY created_at",
+    "SELECT * FROM reminder_logs ORDER BY sent_at",
+    "SELECT * FROM waitlist_entries ORDER BY created_at",
+    "SELECT * FROM schedule_blocks ORDER BY date_value, start_time"
+  ];
+  let results;
+  if (queryable === pool) {
+    results = await Promise.all(statements.map(statement => queryable.query(statement)));
+  } else {
+    results = [];
+    for (const statement of statements) {
+      results.push(await queryable.query(statement));
+    }
+  }
+  const [users, sessions, passwordResetTokens, businesses, hours, professionalHours, professionals, services, appointments, payments, reminders, waitlist, blocks] = results;
 
   const workingHoursByBusiness = groupHours(hours.rows);
   const workingHoursByProfessional = groupProfessionalHours(professionalHours.rows);
@@ -455,14 +348,25 @@ async function readDb() {
 
 async function updateDb(mutator) {
   await ensureDatabase();
-  const db = await readDb();
-  const mutationResult = mutator(db);
-  await persistDb(db);
-  return mutationResult;
+  const lockClient = await pool.connect();
+  let locked = false;
+  try {
+    await lockClient.query("SELECT pg_advisory_lock($1)", [UPDATE_LOCK_ID]);
+    locked = true;
+    const db = await readDb(lockClient);
+    const mutationResult = mutator(db);
+    await persistDb(db, lockClient);
+    return mutationResult;
+  } finally {
+    if (locked) {
+      await lockClient.query("SELECT pg_advisory_unlock($1)", [UPDATE_LOCK_ID]);
+    }
+    lockClient.release();
+  }
 }
 
-async function persistDb(db) {
-  const client = await pool.connect();
+async function persistDb(db, existingClient = null) {
+  const client = existingClient || await pool.connect();
   try {
     await client.query("BEGIN");
     await deleteMissing(client, "sessions", db.sessions.map(item => item.id));
@@ -481,16 +385,15 @@ async function persistDb(db) {
     for (const user of db.users) {
       await client.query(
         `INSERT INTO users (id, name, email, role, business_id, permissions, password_hash, password_salt, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, COALESCE($9::timestamptz, NOW()))
+         VALUES ($1, $2, $3, $4, NULL, $5::jsonb, $6, $7, COALESCE($8::timestamptz, NOW()))
          ON CONFLICT (id) DO UPDATE SET
            name = EXCLUDED.name,
            email = EXCLUDED.email,
            role = EXCLUDED.role,
            password_hash = EXCLUDED.password_hash,
            password_salt = EXCLUDED.password_salt,
-           business_id = EXCLUDED.business_id,
            permissions = EXCLUDED.permissions`,
-        [user.id, user.name, user.email, user.role || "business_admin", user.businessId || null, JSON.stringify(user.permissions || defaultPermissions(user.role)), user.hash, user.salt, user.createdAt || null]
+        [user.id, user.name, user.email, user.role || "business_admin", JSON.stringify(user.permissions || defaultPermissions(user.role)), user.hash, user.salt, user.createdAt || null]
       );
     }
 
@@ -551,6 +454,13 @@ async function persistDb(db) {
       );
       await client.query("DELETE FROM business_working_hours WHERE business_id = $1", [business.id]);
       await insertWorkingHours(client, business.id, business.workingHours || defaultWorkingHours);
+    }
+
+    for (const user of db.users) {
+      await client.query(
+        "UPDATE users SET business_id = $1 WHERE id = $2",
+        [user.businessId || null, user.id]
+      );
     }
 
     for (const professional of db.professionals) {
@@ -711,7 +621,7 @@ async function persistDb(db) {
     await client.query("ROLLBACK");
     throw error;
   } finally {
-    client.release();
+    if (!existingClient) client.release();
   }
 }
 
@@ -1009,7 +919,6 @@ function publicService(service) {
 
 module.exports = {
   defaultPermissions,
-  defaultServices,
   hashPassword,
   id,
   publicBusiness,

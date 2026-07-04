@@ -5,7 +5,6 @@ const { Router } = require("express");
 const auth = require("../middlewares/auth");
 const {
   defaultPermissions,
-  defaultServices,
   hashPassword,
   id,
   publicBusiness,
@@ -20,6 +19,34 @@ const { resolveUploadedImageUrl } = require("../services/image-storage.service")
 const { sendPasswordResetEmail } = require("../services/email.service");
 
 const router = Router();
+const tokenDays = 7;
+const SESSION_COOKIE = "cliqagenda_session";
+const SESSION_MAX_AGE_MS = tokenDays * 24 * 60 * 60 * 1000;
+
+function sessionCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: SESSION_MAX_AGE_MS,
+    path: "/"
+  };
+}
+
+function setSessionCookie(res, token) {
+  res.cookie(SESSION_COOKIE, token, sessionCookieOptions());
+  res.set("Cache-Control", "no-store");
+}
+
+function clearSessionCookie(res) {
+  res.clearCookie(SESSION_COOKIE, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/"
+  });
+  res.set("Cache-Control", "no-store");
+}
 
 const uploadStorage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -39,8 +66,6 @@ const upload = multer({
     cb(new Error("Envie uma imagem JPG, PNG ou WEBP de ate 2 MB."));
   }
 });
-
-const tokenDays = 7;
 
 function tokenHash(token) {
   return crypto.createHash("sha256").update(String(token)).digest("hex");
@@ -168,6 +193,10 @@ function onlyNumbers(value) {
   return String(value || "").replace(/\D/g, "");
 }
 
+function validEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) && value.length <= 254;
+}
+
 function slugify(text) {
   return String(text || "")
     .normalize("NFD")
@@ -176,6 +205,13 @@ function slugify(text) {
     .trim()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+function publicBusinessContext(db, slug) {
+  const business = db.businesses.find(item => item.slug === slug);
+  if (!business) return null;
+  const professionals = db.professionals.filter(item => item.businessId === business.id && item.active);
+  return { business, professionals };
 }
 
 const defaultTheme = {
@@ -260,7 +296,8 @@ function hasBlockConflict(db, businessId, date, time, durationMinutes, professio
     if (block.allDay) return true;
 
     const blockStart = timeToMinutes(block.startTime);
-    const blockEnd = timeToMinutes(block.endTime);
+    const requestedBlockEnd = timeToMinutes(block.endTime);
+    const blockEnd = requestedBlockEnd > blockStart ? requestedBlockEnd : blockStart + 1;
     return rangesOverlap(start, end, blockStart, blockEnd);
   });
 }
@@ -359,24 +396,23 @@ function businessBundle(db, business) {
 
 
 router.post("/auth/register", async (req, res) => {
-  const name = String(req.body.name || "").trim();
+  const name = String(req.body.name || "").trim().slice(0, 100);
   const email = String(req.body.email || "").trim().toLowerCase();
   const password = String(req.body.password || "");
   const whatsapp = onlyNumbers(req.body.whatsapp);
   const businessType = String(req.body.businessType || "Outro").trim().slice(0, 60) || "Outro";
-  const slug = slugify(req.body.slug || name);
+  const slug = slugify(req.body.slug || name).slice(0, 60);
 
-  if (!name || !email || password.length < 6 || !whatsapp || !slug) {
-    return res.status(400).json({ message: "Informe nome, email, senha de 6+ caracteres, WhatsApp e slug." });
+  if (!name || !validEmail(email) || password.length < 8 || password.length > 128 || whatsapp.length < 10 || whatsapp.length > 15 || slug.length < 3) {
+    return res.status(400).json({ message: "Informe nome, e-mail válido, senha de 8+ caracteres, WhatsApp e identificador do negócio." });
   }
 
   const result = await updateDb(db => {
     if (db.users.some(user => user.email === email)) return { error: "Email ja cadastrado." };
-    if (db.businesses.some(business => business.slug === slug)) return { error: "Slug publico ja esta em uso." };
+    if (db.businesses.some(business => business.slug === slug)) return { error: "Identificador do negócio já está em uso." };
 
     const userId = id("usr");
     const businessId = id("biz");
-    const professionalId = id("pro");
     const passwordData = hashPassword(password);
     const user = { id: userId, name, email, role: "owner", businessId, permissions: defaultPermissions("owner"), ...passwordData, createdAt: new Date().toISOString() };
     const business = {
@@ -398,36 +434,14 @@ router.post("/auth/register", async (req, res) => {
       allowClientReschedule: true,
       workingHours: ["09:00", "09:30", "10:00", "10:30", "11:00", "13:00", "13:30", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30", "17:00"]
     };
-    const professional = {
-      id: professionalId,
-      businessId,
-      name: "Profissional principal",
-      specialty: "Atendimento geral",
-      photoUrl: "",
-      active: true,
-      workingDays: [1, 2, 3, 4, 5, 6],
-      workingSchedule: parseWorkingSchedule({}, [1, 2, 3, 4, 5, 6], business.workingHours),
-      createdAt: new Date().toISOString()
-    };
-
     db.users.push(user);
     db.businesses.push(business);
-    db.professionals.push(professional);
-    db.services.push(...defaultServices.map(service => ({
-      ...service,
-      id: id("svc"),
-      businessId,
-      professionalId,
-      professionalName: professional.name,
-      active: true,
-      createdAt: new Date().toISOString()
-    })));
 
     const token = crypto.randomBytes(32).toString("hex");
     db.sessions.push({
       id: id("ses"),
       userId,
-      token,
+      token: tokenHash(token),
       expiresAt: new Date(Date.now() + tokenDays * 864e5).toISOString()
     });
 
@@ -435,7 +449,9 @@ router.post("/auth/register", async (req, res) => {
   });
 
   if (result.error) return res.status(409).json({ message: result.error });
-  return res.status(201).json(result);
+  const { token, ...payload } = result;
+  setSessionCookie(res, token);
+  return res.status(201).json(payload);
 });
 
 router.post("/auth/password/forgot", async (req, res) => {
@@ -448,7 +464,7 @@ router.post("/auth/password/forgot", async (req, res) => {
     if (!user) return {};
 
     resetToken = crypto.randomBytes(32).toString("hex");
-    resetUrl = `${process.env.PUBLIC_BASE_URL || "http://localhost:3000"}/?resetToken=${resetToken}`;
+    resetUrl = `${process.env.PUBLIC_BASE_URL || "http://localhost:3000"}/login?resetToken=${resetToken}`;
     db.passwordResetTokens = (db.passwordResetTokens || []).filter(item => item.userId !== user.id || item.usedAt);
     db.passwordResetTokens.push({
       id: id("rst"),
@@ -474,7 +490,9 @@ router.post("/auth/password/forgot", async (req, res) => {
 router.post("/auth/password/reset", async (req, res) => {
   const token = String(req.body.token || "").trim();
   const password = String(req.body.password || "");
-  if (!token || password.length < 6) return res.status(400).json({ message: "Informe token e nova senha com no minimo 6 caracteres." });
+  if (!token || password.length < 8 || password.length > 128) {
+    return res.status(400).json({ message: "Informe token e nova senha com no mínimo 8 caracteres." });
+  }
 
   const result = await updateDb(db => {
     const currentHash = tokenHash(token);
@@ -500,6 +518,9 @@ router.post("/auth/password/reset", async (req, res) => {
 router.post("/auth/login", async (req, res) => {
   const email = String(req.body.email || "").trim().toLowerCase();
   const password = String(req.body.password || "");
+  if (!validEmail(email) || !password || password.length > 128) {
+    return res.status(401).json({ message: "Email ou senha invalidos." });
+  }
 
   const result = await updateDb(db => {
     const user = db.users.find(item => item.email === email);
@@ -511,7 +532,7 @@ router.post("/auth/login", async (req, res) => {
     db.sessions.push({
       id: id("ses"),
       userId: user.id,
-      token,
+      token: tokenHash(token),
       expiresAt: new Date(Date.now() + tokenDays * 864e5).toISOString()
     });
 
@@ -519,39 +540,40 @@ router.post("/auth/login", async (req, res) => {
   });
 
   if (result.error) return res.status(401).json({ message: result.error });
-  res.json(result);
+  const { token, ...payload } = result;
+  setSessionCookie(res, token);
+  res.json(payload);
 });
 
 router.post("/auth/logout", auth, async (req, res) => {
   await updateDb(db => {
-    db.sessions = db.sessions.filter(session => session.token !== req.token);
+    db.sessions = db.sessions.filter(session => session.token !== req.sessionToken);
   });
+  clearSessionCookie(res);
   res.status(204).end();
 });
 
 router.get("/auth/me", auth, async (req, res) => {
   const db = await readDb();
+  res.set("Cache-Control", "no-store");
   res.json({
     user: { id: req.user.id, name: req.user.name, email: req.user.email, role: req.user.role, permissions: req.user.permissions || {} },
     ...businessBundle(db, req.business)
   });
 });
 
-router.get("/public/:slug?", async (req, res) => {
+router.get("/public/:slug", async (req, res) => {
   const db = await readDb();
-  const business = req.params.slug
-    ? db.businesses.find(item => item.slug === req.params.slug)
-    : db.businesses[0];
-
-  if (!business) return res.status(404).json({ message: "Negocio nao encontrado." });
+  const context = publicBusinessContext(db, req.params.slug);
+  if (!context) return res.status(404).json({ message: "Negócio não encontrado." });
+  const { business, professionals } = context;
+  const professionalIds = new Set(professionals.map(item => item.id));
 
   res.json({
     business: publicBusiness(business),
-    professionals: db.professionals
-      .filter(professional => professional.businessId === business.id && professional.active)
-      .map(publicProfessional),
+    professionals: professionals.map(publicProfessional),
     services: db.services
-      .filter(service => service.businessId === business.id && service.active !== false)
+      .filter(service => service.businessId === business.id && professionalIds.has(service.professionalId) && service.active !== false)
       .map(publicService),
     blocks: db.blocks.filter(block => block.businessId === business.id)
   });
@@ -559,18 +581,18 @@ router.get("/public/:slug?", async (req, res) => {
 
 router.get("/public/:slug/slots", async (req, res) => {
   const db = await readDb();
-  const business = db.businesses.find(item => item.slug === req.params.slug);
-  if (!business) return res.status(404).json({ message: "Negocio nao encontrado." });
+  const context = publicBusinessContext(db, req.params.slug);
+  if (!context) return res.status(404).json({ message: "Negócio não encontrado." });
+  const { business, professionals } = context;
 
   const date = String(req.query.date || "");
   const professionalId = String(req.query.professionalId || "");
   const serviceId = String(req.query.serviceId || "");
-  const professional = db.professionals.find(item => item.businessId === business.id && item.id === professionalId && item.active);
-  if (!professionalId || !professional) return res.status(400).json({ message: "Selecione um profissional valido." });
+  const professional = professionals.find(item => item.id === professionalId);
+  if (!professional) return res.status(400).json({ message: "Selecione um profissional válido." });
 
-  const service = db.services.find(item => item.businessId === business.id && item.id === serviceId && item.active !== false);
+  const service = db.services.find(item => item.businessId === business.id && item.professionalId === professional.id && item.id === serviceId && item.active !== false);
   if (!serviceId || !service) return res.status(400).json({ message: "Selecione um servico valido para calcular a duracao do atendimento." });
-  if (service.professionalId !== professional.id) return res.status(400).json({ message: "Este servico nao pertence ao profissional selecionado." });
 
   if (!professionalWorksOnDate(professional, date)) {
     return res.json({
@@ -586,8 +608,8 @@ router.get("/public/:slug/slots", async (req, res) => {
   const professionalHours = professionalWorkingHoursForDate(business, professional, date);
   const slots = professionalHours.filter(time => {
     return canFitInsideWorkingHours(professionalHours, time, durationWithBuffer)
-      && !hasBlockConflict(db, business.id, date, time, durationWithBuffer, professionalId)
-      && !isOccupied(db, business.id, professionalId, date, time, service);
+      && !hasBlockConflict(db, business.id, date, time, durationWithBuffer, professional.id)
+      && !isOccupied(db, business.id, professional.id, date, time, service);
   });
 
   res.json({
@@ -600,18 +622,20 @@ router.get("/public/:slug/slots", async (req, res) => {
 
 router.post("/public/:slug/appointments", async (req, res) => {
   const result = await updateDb(db => {
-    const business = db.businesses.find(item => item.slug === req.params.slug);
-    if (!business) return { status: 404, error: "Negocio nao encontrado." };
+    const context = publicBusinessContext(db, req.params.slug);
+    if (!context) return { status: 404, error: "Negócio não encontrado." };
+    const { business, professionals } = context;
 
-    const professional = db.professionals.find(item => item.businessId === business.id && item.id === req.body.professionalId && item.active);
-    const service = db.services.find(item => item.businessId === business.id && item.id === req.body.serviceId && item.active !== false);
+    const professional = professionals.find(item => item.id === req.body.professionalId);
+    const service = professional
+      ? db.services.find(item => item.businessId === business.id && item.professionalId === professional.id && item.id === req.body.serviceId && item.active !== false)
+      : null;
     const date = String(req.body.date || "");
     const time = String(req.body.time || "");
     const customer = String(req.body.customer || "").trim();
     const phone = onlyNumbers(req.body.phone);
 
-    if (!professional || !service || !date || !time || !customer || !phone) return { status: 400, error: "Preencha profissional, servico, data, horario, nome e WhatsApp." };
-    if (service.professionalId !== professional.id) return { status: 400, error: "Este servico nao pertence ao profissional selecionado." };
+    if (!professional || !service || !date || !time || !customer || !phone) return { status: 400, error: "Preencha profissional, serviço, data, horário, nome e WhatsApp." };
     if (!professionalWorksOnDate(professional, date)) return { status: 400, error: "Este profissional nao atende neste dia da semana." };
     const professionalHours = professionalWorkingHoursForDate(business, professional, date);
     const durationWithBuffer = serviceDurationWithBuffer(service);
@@ -677,8 +701,9 @@ router.post("/public/:slug/appointments", async (req, res) => {
 
 router.post("/public/:slug/appointments/:id/whatsapp-confirmation", async (req, res) => {
   const db = await readDb();
-  const business = db.businesses.find(item => item.slug === req.params.slug);
-  if (!business) return res.status(404).json({ message: "Negocio nao encontrado." });
+  const context = publicBusinessContext(db, req.params.slug);
+  if (!context) return res.status(404).json({ message: "Negócio não encontrado." });
+  const { business } = context;
 
   const appointment = db.appointments.find(item => item.id === req.params.id && item.businessId === business.id);
   if (!appointment) return res.status(404).json({ message: "Agendamento nao encontrado." });
@@ -756,10 +781,12 @@ router.post("/appointments/:id/reschedule", async (req, res) => {
 
 router.post("/public/:slug/waitlist", async (req, res) => {
   const result = await updateDb(db => {
-    const business = db.businesses.find(item => item.slug === req.params.slug);
-    if (!business) return { status: 404, error: "Negocio nao encontrado." };
-    const service = db.services.find(item => item.businessId === business.id && item.id === req.body.serviceId);
-    const professional = service ? db.professionals.find(item => item.id === service.professionalId) : null;
+    const context = publicBusinessContext(db, req.params.slug);
+    if (!context) return { status: 404, error: "Negócio não encontrado." };
+    const { business, professionals } = context;
+    const professional = professionals.find(item => item.id === req.body.professionalId);
+    if (!professional) return { status: 400, error: "Selecione um profissional válido." };
+    const service = db.services.find(item => item.businessId === business.id && item.professionalId === professional.id && item.id === req.body.serviceId);
     const item = {
       id: id("wait"),
       businessId: business.id,
@@ -767,7 +794,7 @@ router.post("/public/:slug/waitlist", async (req, res) => {
       phone: onlyNumbers(req.body.phone),
       date: String(req.body.date || ""),
       period: String(req.body.period || "").trim(),
-      service: service ? `${service.name}${professional ? ` com ${professional.name}` : ""}` : "Nao informado",
+      service: service ? `${service.name} com ${professional.name}` : `Atendimento com ${professional.name}`,
       createdAt: new Date().toISOString()
     };
     if (!item.name || !item.phone || !item.date || !item.period) return { status: 400, error: "Preencha a lista de espera." };
@@ -830,12 +857,14 @@ router.post("/admin/users", auth, async (req, res) => {
   if (permissionError) return res.status(permissionError.status).json({ message: permissionError.error });
   if (req.user.role !== "owner") return res.status(403).json({ message: "Apenas o dono do negócio pode criar novos usuários." });
   const email = String(req.body.email || "").trim().toLowerCase();
-  const name = String(req.body.name || "").trim();
+  const name = String(req.body.name || "").trim().slice(0, 100);
   const password = String(req.body.password || "");
   const role = String(req.body.role || "business_admin").trim();
   const permissions = req.body.permissions || defaultPermissions(role);
   const result = await updateDb(db => {
-    if (!email || !name || password.length < 6) return { status: 400, error: "Informe nome, email e senha com no minimo 6 caracteres." };
+    if (!validEmail(email) || !name || password.length < 8 || password.length > 128) {
+      return { status: 400, error: "Informe nome, e-mail válido e senha com no mínimo 8 caracteres." };
+    }
     if (db.users.some(user => user.email === email)) return { status: 409, error: "Email ja cadastrado." };
     const { salt, hash } = hashPassword(password);
     const user = { id: id("usr"), name, email, salt, hash, role, businessId: req.business.id, permissions, createdAt: new Date().toISOString() };
@@ -866,7 +895,7 @@ router.put("/admin/business", auth, async (req, res) => {
     const business = db.businesses.find(item => item.id === req.business.id);
     const nextSlug = slugify(req.body.slug || business.slug);
     if (db.businesses.some(item => item.id !== business.id && item.slug === nextSlug)) {
-      return { status: 409, error: "Slug publico ja esta em uso." };
+      return { status: 409, error: "Identificador do negócio já está em uso." };
     }
     business.name = String(req.body.name || business.name).trim();
     business.slug = nextSlug;
@@ -892,10 +921,11 @@ router.post("/admin/professionals", auth, async (req, res) => {
   const permissionError = requirePermission(req, "professionals");
   if (permissionError) return res.status(permissionError.status).json({ message: permissionError.error });
   const result = await updateDb(db => {
+    const name = String(req.body.name || "").trim();
     const professional = {
       id: id("pro"),
       businessId: req.business.id,
-      name: String(req.body.name || "").trim(),
+      name,
       specialty: String(req.body.specialty || "").trim(),
       photoUrl: String(req.body.photoUrl || "").trim(),
       workingHours: parseWorkingHours(req.body.workingHours, req.business.workingHours),
@@ -910,6 +940,22 @@ router.post("/admin/professionals", auth, async (req, res) => {
   });
   if (result.error) return res.status(result.status || 400).json({ message: result.error });
   res.status(201).json(result);
+});
+
+router.patch("/admin/professionals/:id", auth, async (req, res) => {
+  const permissionError = requirePermission(req, "professionals");
+  if (permissionError) return res.status(permissionError.status).json({ message: permissionError.error });
+  const result = await updateDb(db => {
+    const professional = db.professionals.find(item => item.businessId === req.business.id && item.id === req.params.id);
+    if (!professional) return { status: 404, error: "Profissional nao encontrado." };
+    const name = String(req.body.name || professional.name).trim();
+    if (!name) return { status: 400, error: "Informe o nome do profissional." };
+    professional.name = name;
+    professional.specialty = String(req.body.specialty ?? professional.specialty ?? "").trim();
+    return { professional: publicProfessional(professional) };
+  });
+  if (result.error) return res.status(result.status || 400).json({ message: result.error });
+  res.json(result);
 });
 
 router.post("/admin/professionals/:id/photo", auth, upload.single("photo"), async (req, res) => {

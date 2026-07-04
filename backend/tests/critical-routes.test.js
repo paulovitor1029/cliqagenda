@@ -23,8 +23,41 @@ async function registerBusiness(prefix, businessType = "Outro") {
 
   assert.equal(response.body.business.slug, slug);
   assert.equal(response.body.business.businessType, businessType);
-  assert.ok(response.body.token);
-  return response.body;
+  assert.equal(response.body.token, undefined);
+  assert.deepEqual(response.body.professionals, []);
+  assert.deepEqual(response.body.services, []);
+  const cookie = response.headers["set-cookie"][0].split(";")[0];
+  assert.match(cookie, /^cliqagenda_session=/);
+
+  const professionalResponse = await request(app)
+    .post("/api/admin/professionals")
+    .set("Cookie", cookie)
+    .send({
+      name: `Profissional ${prefix}`,
+      specialty: "Atendimento",
+      workingHours: ["09:00", "09:30", "10:00", "10:30", "11:00"],
+      workingDays: [1, 2, 3, 4, 5, 6]
+    })
+    .expect(201);
+
+  const serviceResponse = await request(app)
+    .post("/api/admin/services")
+    .set("Cookie", cookie)
+    .send({
+      professionalId: professionalResponse.body.professional.id,
+      name: `Servico ${prefix}`,
+      price: 40,
+      duration: 30,
+      buffer: 0
+    })
+    .expect(201);
+
+  return {
+    ...response.body,
+    cookie,
+    professionals: [professionalResponse.body.professional],
+    services: [serviceResponse.body.service]
+  };
 }
 
 test("GET /api/health retorna status da API", async () => {
@@ -42,11 +75,39 @@ test("POST /api/auth/login rejeita credenciais invalidas", async () => {
   assert.match(response.body.message, /Email ou senha invalidos/i);
 });
 
-test("GET /api/public carrega o negocio publico demo", async () => {
-  const response = await request(app).get("/api/public").expect(200);
-  assert.ok(response.body.business);
-  assert.ok(Array.isArray(response.body.professionals));
-  assert.ok(Array.isArray(response.body.services));
+test("GET /api/public exige slug do negocio", async () => {
+  await request(app).get("/api/public").expect(404);
+});
+
+test("link publico do negocio exibe seus profissionais", async () => {
+  const empresa = await registerBusiness("link-negocio");
+  const firstProfessional = empresa.professionals[0];
+
+  const secondResponse = await request(app)
+    .post("/api/admin/professionals")
+    .set("Cookie", empresa.cookie)
+    .send({
+      name: "Segundo Profissional",
+      workingHours: ["09:00", "09:30"],
+      workingDays: [1, 2, 3, 4, 5, 6]
+    })
+    .expect(201);
+
+  await request(app)
+    .post("/api/admin/services")
+    .set("Cookie", empresa.cookie)
+    .send({ professionalId: secondResponse.body.professional.id, name: "Servico segundo", price: 50, duration: 30 })
+    .expect(201);
+
+  const publicPage = await request(app)
+    .get(`/api/public/${empresa.business.slug}`)
+    .expect(200);
+
+  assert.equal(publicPage.body.professionals.length, 2);
+  assert.ok(publicPage.body.professionals.some(item => item.id === firstProfessional.id));
+  assert.ok(publicPage.body.professionals.some(item => item.id === secondResponse.body.professional.id));
+  assert.ok(publicPage.body.services.some(service => service.professionalId === firstProfessional.id));
+  assert.ok(publicPage.body.services.some(service => service.professionalId === secondResponse.body.professional.id));
 });
 
 test("POST /api/auth/register exige dados obrigatorios", async () => {
@@ -67,12 +128,12 @@ test("multiempresa: cada login acessa somente dados da propria empresa", async (
 
   const adminA = await request(app)
     .get("/api/admin")
-    .set("Authorization", `Bearer ${empresaA.token}`)
+    .set("Cookie", empresaA.cookie)
     .expect(200);
 
   const adminB = await request(app)
     .get("/api/admin")
-    .set("Authorization", `Bearer ${empresaB.token}`)
+    .set("Cookie", empresaB.cookie)
     .expect(200);
 
   assert.equal(adminA.body.business.id, empresaA.business.id);
@@ -106,12 +167,12 @@ test("multiempresa: agendamento de uma empresa nao aparece no painel de outra", 
 
   const adminA = await request(app)
     .get("/api/admin")
-    .set("Authorization", `Bearer ${empresaA.token}`)
+    .set("Cookie", empresaA.cookie)
     .expect(200);
 
   const adminB = await request(app)
     .get("/api/admin")
-    .set("Authorization", `Bearer ${empresaB.token}`)
+    .set("Cookie", empresaB.cookie)
     .expect(200);
 
   assert.ok(!adminA.body.appointments.some(item => item.id === appointmentB.body.appointment.id));
@@ -125,12 +186,12 @@ test("multiempresa: ADM de uma empresa nao consegue remover servico de outra", a
 
   await request(app)
     .delete(`/api/admin/services/${serviceFromB.id}`)
-    .set("Authorization", `Bearer ${empresaA.token}`)
+    .set("Cookie", empresaA.cookie)
     .expect(204);
 
   const adminB = await request(app)
     .get("/api/admin")
-    .set("Authorization", `Bearer ${empresaB.token}`)
+    .set("Cookie", empresaB.cookie)
     .expect(200);
 
   assert.ok(adminB.body.services.some(item => item.id === serviceFromB.id));
@@ -142,7 +203,7 @@ test("profissional pode ter horarios individuais", async () => {
 
   await request(app)
     .put(`/api/admin/professionals/${professional.id}/hours`)
-    .set("Authorization", `Bearer ${empresa.token}`)
+    .set("Cookie", empresa.cookie)
     .send({ workingHours: ["08:00", "08:30", "09:00"] })
     .expect(200);
 
@@ -151,7 +212,7 @@ test("profissional pode ter horarios individuais", async () => {
     .get(`/api/public/${empresa.business.slug}/slots?date=2099-04-10&professionalId=${professional.id}&serviceId=${service.id}`)
     .expect(200);
 
-  assert.deepEqual(slots.body.slots, ["08:00", "08:30"]);
+  assert.deepEqual(slots.body.slots, ["08:00", "08:30", "09:00"]);
 });
 
 test("servico desativado sai da pagina publica sem apagar historico", async () => {
@@ -173,7 +234,7 @@ test("servico desativado sai da pagina publica sem apagar historico", async () =
 
   await request(app)
     .patch(`/api/admin/services/${service.id}/active`)
-    .set("Authorization", `Bearer ${empresa.token}`)
+    .set("Cookie", empresa.cookie)
     .send({ active: false })
     .expect(200);
 
@@ -183,7 +244,7 @@ test("servico desativado sai da pagina publica sem apagar historico", async () =
 
   const admin = await request(app)
     .get("/api/admin")
-    .set("Authorization", `Bearer ${empresa.token}`)
+    .set("Cookie", empresa.cookie)
     .expect(200);
 
   assert.ok(!publico.body.services.some(item => item.id === service.id));
@@ -202,7 +263,7 @@ test("bloqueio impede novo agendamento e remarcacao", async () => {
 
   await request(app)
     .post("/api/admin/blocks")
-    .set("Authorization", `Bearer ${empresa.token}`)
+    .set("Cookie", empresa.cookie)
     .send({ date: "2099-06-10", startTime: "10:00", endTime: "10:00", professionalId: professional.id, reason: "Emergencia" })
     .expect(201);
 
@@ -223,12 +284,12 @@ test("lista de espera fica isolada e aparece no painel da empresa", async () => 
 
   await request(app)
     .post(`/api/public/${empresa.business.slug}/waitlist`)
-    .send({ name: "Cliente Espera", phone: "11944443333", date: "2099-07-10", period: "tarde", serviceId: service.id })
+    .send({ name: "Cliente Espera", phone: "11944443333", date: "2099-07-10", period: "tarde", professionalId: empresa.professionals[0].id, serviceId: service.id })
     .expect(201);
 
   const admin = await request(app)
     .get("/api/admin")
-    .set("Authorization", `Bearer ${empresa.token}`)
+    .set("Cookie", empresa.cookie)
     .expect(200);
 
   assert.ok(admin.body.waitlist.some(item => item.name === "Cliente Espera"));
@@ -241,7 +302,7 @@ test("Pix local e dashboard financeiro registram sinal pendente", async () => {
 
   await request(app)
     .put("/api/admin/business")
-    .set("Authorization", `Bearer ${empresa.token}`)
+    .set("Cookie", empresa.cookie)
     .send({ ...empresa.business, deposit: 20, pixKey: "11999999999" })
     .expect(200);
 
@@ -255,7 +316,7 @@ test("Pix local e dashboard financeiro registram sinal pendente", async () => {
 
   const finance = await request(app)
     .get("/api/admin/finance")
-    .set("Authorization", `Bearer ${empresa.token}`)
+    .set("Cookie", empresa.cookie)
     .expect(200);
 
   assert.ok(finance.body.pendingPix >= 20);

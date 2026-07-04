@@ -9,11 +9,11 @@ O produto atende barbearias, salões, manicures, nail designers, maquiadores, pr
 - Cadastro e login de administradores vinculados a uma empresa/negócio específico.
 - Painel ADM protegido por autenticação e isolado por `business_id`.
 - Abas e ações administrativas bloqueadas até login.
-- Página pública por slug para cada empresa, com fluxo de cliente sem login.
+- Página pública por slug exclusivo de cada negócio, com fluxo de cliente sem login.
 - Cadastro de vários profissionais/funcionários por negócio.
 - Foto individual para cada profissional, via URL ou upload real de imagem.
 - Cada profissional pode ter seus próprios serviços, preços, duração e intervalo.
-- Cliente escolhe profissional antes de escolher o serviço.
+- Cliente acessa o link do negócio e escolhe profissional, serviço e horário.
 - Agenda considera profissional, data e horário, permitindo profissionais diferentes no mesmo horário.
 - Cancelamento e remarcação respeitando regras definidas pelo ADM.
 - Bloqueio emergencial de dias ou horários pelo ADM.
@@ -24,13 +24,14 @@ O produto atende barbearias, salões, manicures, nail designers, maquiadores, pr
 - Persistência em PostgreSQL local com tabelas relacionais e vínculo por empresa.
 - Migrations versionadas.
 - Testes automatizados cobrindo rotas críticas e isolamento entre empresas.
+- Frontend em React, TypeScript e Vite.
 
 ## Como rodar
 
 ### 1. Instalar dependências
 
 ```bash
-npm install --prefix backend
+npm run install:all
 ```
 
 ### 2. Configurar ambiente
@@ -49,8 +50,6 @@ DB_PORT=5432
 DB_USER=postgres
 DB_PASS=sua_senha_do_postgres
 DB_NAME=cliqagenda
-ADMIN_EMAIL=admin@cliqagenda.local
-ADMIN_PASSWORD=admin123
 ```
 
 ### 3. Rodar migrations
@@ -71,12 +70,7 @@ Acesse:
 http://localhost:3000
 ```
 
-## Login demo
-
-```text
-admin@cliqagenda.local
-admin123
-```
+Não existe usuário, profissional ou serviço demo. Crie a primeira conta em `http://localhost:3000/cadastro`.
 
 ## Estrutura
 
@@ -96,10 +90,12 @@ cliqagenda/
 │   ├── tests/
 │   └── uploads/
 ├── frontend/
-│   └── src/
-│       ├── css/
-│       ├── js/
-│       └── index.html
+│   ├── src/
+│   │   ├── pages/
+│   │   ├── App.tsx
+│   │   └── main.tsx
+│   ├── package.json
+│   └── vite.config.ts
 └── README.md
 ```
 
@@ -155,7 +151,7 @@ Cada empresa possui:
 - cadastro próprio;
 - login próprio;
 - tipo de negócio;
-- slug público exclusivo;
+- slug e link público exclusivos do negócio;
 - profissionais próprios;
 - serviços e preços próprios;
 - agendamentos próprios;
@@ -164,7 +160,7 @@ Cada empresa possui:
 
 A separação é feita por `business_id` no backend. O painel ADM sempre retorna somente os dados da empresa vinculada ao usuário autenticado.
 
-Exemplos de páginas públicas:
+Exemplos de páginas públicas individuais:
 
 ```text
 http://localhost:3000/p/pai-cortes
@@ -208,7 +204,7 @@ Consulte o arquivo `DEPLOY_HOJE.md`.
 Comandos locais:
 
 ```powershell
-npm install --prefix backend
+npm run install:all
 npm run migrate --prefix backend
 npm run dev
 ```
@@ -216,7 +212,7 @@ npm run dev
 Comandos de produção sugeridos:
 
 ```bash
-npm install --prefix backend
+npm run build
 npm run start
 ```
 
@@ -227,7 +223,7 @@ Esta versão adiciona os 10 ajustes antes de publicar o sistema na web:
 1. Testes automatizados de isolamento entre empresas.
 2. Política de backup em `BACKUP_POLICY.md`.
 3. Recuperação de senha por token.
-4. Dados demo desativados automaticamente em `NODE_ENV=production`.
+4. Usuários, profissionais e serviços demo removidos de todos os ambientes.
 7. Permissões internas reforçadas por função e por checkbox.
 8. Guia para domínio próprio em `DOMINIO_E_BANCO_NUVEM.md`.
 9. Suporte a PostgreSQL em nuvem via `DATABASE_URL`.
@@ -236,7 +232,7 @@ Esta versão adiciona os 10 ajustes antes de publicar o sistema na web:
 ### Scripts úteis
 
 ```bash
-npm install --prefix backend
+npm run install:all
 npm run migrate --prefix backend
 npm run dev
 npm test --prefix backend
