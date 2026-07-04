@@ -1,0 +1,2 @@
+ALTER TABLE businesses
+ADD COLUMN IF NOT EXISTS theme JSONB NOT NULL DEFAULT '{}'::jsonb;

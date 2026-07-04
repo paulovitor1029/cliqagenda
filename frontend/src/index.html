@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agenda Simples | Agendamento online</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">CA</div>
+      <div>
+        <strong>CliqAgenda</strong>
+        <span>Agenda online para beleza e estetica</span>
+      </div>
+    </div>
+    <nav class="top-actions">
+      <button class="btn ghost" data-view="pitch">Início</button>
+      <button class="btn ghost" data-view="client">Cliente</button>
+      <button class="btn ghost" data-view="admin">Painel do negócio</button>
+      <button class="btn danger" id="logoutBtn">Sair</button>
+    </nav>
+  </header>
+
+  <main class="shell">
+    <section id="pitch" class="view active">
+      <div class="welcome-screen">
+        <div class="welcome-orb welcome-orb-one" aria-hidden="true"></div>
+        <div class="welcome-orb welcome-orb-two" aria-hidden="true"></div>
+        <div class="welcome-orb welcome-orb-three" aria-hidden="true"></div>
+
+        <article class="welcome-card">
+          <div class="welcome-logo-area">
+            <div class="welcome-logo-ring" aria-hidden="true"></div>
+            <div class="welcome-logo" id="welcomeLogo">CA</div>
+          </div>
+
+          <span class="badge welcome-badge" id="welcomeBusinessType">Beleza e estetica</span>
+
+          <h1>
+            Bem-vindo(a) ao
+            <span id="welcomeBusinessName">CliqAgenda</span>
+          </h1>
+
+          <p id="welcomeDescription">
+            Escolha um profissional, selecione o servico, veja os horarios disponiveis e agende de forma simples.
+          </p>
+
+          <div class="welcome-actions">
+            <button class="btn primary" data-view="client">Agendar horario</button>
+            <button class="btn" data-view="admin">Acessar painel do negócio</button>
+          </div>
+
+          <div class="welcome-mini-info" aria-label="Informacoes rapidas do negocio">
+            <div>
+              <strong id="welcomeProfessionals">0</strong>
+              <span>profissionais</span>
+            </div>
+            <div>
+              <strong id="welcomeServices">0</strong>
+              <span>servicos</span>
+            </div>
+            <div>
+              <strong id="welcomeWhatsapp">WhatsApp</strong>
+              <span>contato</span>
+            </div>
+          </div>
+        </article>
+
+        <aside class="welcome-side-card">
+          <span class="badge">Agenda online</span>
+          <h2>Agende com praticidade</h2>
+          <p>
+            Esta pagina foi personalizada para o negocio. Use o link publico abaixo para compartilhar com seus clientes.
+          </p>
+          <div class="welcome-link-box">
+            <span>Link publico</span>
+            <strong id="publicLinkText">http://localhost:3000</strong>
+          </div>
+          <div class="welcome-flow">
+            <div><span>1</span> Escolha o profissional</div>
+            <div><span>2</span> Escolha o serviço</div>
+            <div><span>3</span> Confirme pelo WhatsApp</div>
+          </div>
+          <div class="public-service-highlights" id="welcomeServiceHighlights"></div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="client" class="view">
+      <div class="client-layout">
+        <aside class="card public-card">
+          <div class="profile-row big">
+            <div class="avatar big" id="publicAvatar">JB</div>
+            <div>
+              <span class="badge">Pagina publica</span>
+              <h2 id="publicName">Joao Barbearia</h2>
+              <p id="publicDesc">Cortes, barba e acabamento com hora marcada.</p>
+            </div>
+          </div>
+          <div class="info-list">
+            <div><strong>Tipo</strong><span id="publicBusinessType">Beleza e estetica</span></div>
+            <div><strong>WhatsApp</strong><span id="publicWhatsapp">(11) 99999-9999</span></div>
+            <div><strong>Endereco</strong><span id="publicAddress">Rua Exemplo, 123</span></div>
+            <div><strong>Politica</strong><span id="publicPolicy">Cancelamento/remarcacao ate 6h antes.</span></div>
+          </div>
+          <div class="divider"></div>
+          <h3>Profissionais</h3>
+          <div id="publicProfessionals" class="public-professionals"></div>
+          <div class="notice warning" id="pixNotice">Reserva com sinal Pix a partir de R$ 10.</div>
+        </aside>
+
+        <article class="card booking-card">
+          <h2>Agendar horario</h2>
+          <form id="bookingForm" class="form-stack">
+            <label>Profissional<select id="bookingProfessional" required></select></label>
+            <label>Servico<select id="bookingService" required></select></label>
+            <div class="two-cols">
+              <label>Data<input type="date" id="bookingDate" required /></label>
+              <label>Horario<select id="bookingTime" required></select></label>
+            </div>
+            <div class="two-cols">
+              <label>Nome<input id="customerName" placeholder="Ex: Pedro Silva" required /></label>
+              <label>WhatsApp<input id="customerPhone" placeholder="11999999999" required /></label>
+            </div>
+            <div class="two-cols">
+              <label>Cupom<input id="couponCode" placeholder="PRIMEIROCORTE" /></label>
+              <label>Recorrencia
+                <select id="recurrence">
+                  <option value="0">Nao repetir</option>
+                  <option value="15">A cada 15 dias</option>
+                  <option value="30">A cada 30 dias</option>
+                </select>
+              </label>
+            </div>
+            <button class="btn primary full" type="submit">Solicitar agendamento</button>
+          </form>
+          <div id="bookingResult"></div>
+
+          <div class="divider"></div>
+          <h3>Consultar, cancelar ou remarcar</h3>
+          <div class="inline-form">
+            <input id="lookupCode" placeholder="Codigo do agendamento" />
+            <button class="btn" id="lookupBtn">Buscar</button>
+          </div>
+          <div id="lookupResult"></div>
+
+          <div class="divider"></div>
+          <h3>Lista de espera</h3>
+          <form id="waitlistForm" class="form-stack compact">
+            <div class="two-cols">
+              <input id="waitName" placeholder="Nome" required />
+              <input id="waitPhone" placeholder="WhatsApp" required />
+            </div>
+            <div class="two-cols">
+              <input type="date" id="waitDate" required />
+              <input id="waitPeriod" placeholder="Ex: tarde, 14h-18h" required />
+            </div>
+            <select id="waitService" required></select>
+            <button class="btn full" type="submit">Entrar na espera</button>
+          </form>
+        </article>
+      </div>
+    </section>
+
+    <section id="admin" class="view">
+      <div class="admin-grid">
+        <aside class="card admin-menu">
+          <h2>Painel do negócio</h2>
+          <p>Área administrativa do negócio.</p>
+          <div id="authBadge" class="auth-badge">Sem login</div>
+          <button class="admin-tab active" data-admin="auth">Login</button>
+          <button class="admin-tab" data-admin="dashboard" data-protected="true">Resumo</button>
+          <button class="admin-tab" data-admin="settings" data-protected="true">Dados do negócio</button>
+          <button class="admin-tab" data-admin="professionals" data-protected="true">Profissionais</button>
+          <button class="admin-tab" data-admin="services" data-protected="true">Serviços e preços</button>
+          <button class="admin-tab" data-admin="appointments" data-protected="true">Agenda de horários</button>
+          <button class="admin-tab" data-admin="blocks" data-protected="true">Bloqueios de agenda</button>
+          <button class="admin-tab" data-admin="finance" data-protected="true">Financeiro e pagamentos</button>
+          <button class="admin-tab" data-admin="users" data-protected="true">Usuarios</button>
+          <button class="admin-tab" data-admin="clients" data-protected="true">Clientes e histórico</button>
+        </aside>
+
+        <div>
+          <section id="admin-auth" class="admin-view active">
+            <div class="alert warning" id="adminAuthNotice">Entre com uma conta do negócio para acessar o painel.</div>
+            <div class="auth-grid">
+              <div class="card">
+                <h2>Entrar</h2>
+                <form id="loginForm" class="form-stack">
+                  <label>Email<input id="loginEmail" type="email" required /></label>
+                  <label>Senha<input id="loginPassword" type="password" required /></label>
+                  <button class="btn primary">Entrar no painel</button>
+                </form>
+                <div class="divider"></div>
+                <h3>Recuperar senha</h3>
+                <form id="forgotPasswordForm" class="form-stack compact">
+                  <label>Email cadastrado<input id="forgotEmail" type="email" placeholder="email@exemplo.com" /></label>
+                  <button class="btn" type="submit">Gerar link de recuperação</button>
+                </form>
+                <form id="resetPasswordForm" class="form-stack compact hidden">
+                  <label>Token<input id="resetToken" /></label>
+                  <label>Nova senha<input id="resetPassword" type="password" minlength="6" /></label>
+                  <button class="btn primary" type="submit">Atualizar senha</button>
+                </form>
+                <div id="passwordRecoveryResult"></div>
+              </div>
+              <div class="card">
+                <div class="section-title-row">
+                  <div>
+                    <span class="badge">Cadastro guiado</span>
+                    <h2>Cadastrar negócio</h2>
+                  </div>
+                </div>
+
+                <form id="registerForm" class="form-stack guided-form">
+                  <section class="guided-step">
+                    <div class="guided-step-number">1</div>
+                    <div class="guided-step-content">
+                      <h3>Dados do negócio</h3>
+                      <label>Nome do negócio<input id="registerName" placeholder="Ex: Sebastian Hair" required /></label>
+                      <label>Tipo de negócio
+                        <select id="registerType" required>
+                          <option value="Barbearia">Barbearia</option>
+                          <option value="Cabeleireiro / Salão de beleza">Cabeleireiro / Salão de beleza</option>
+                          <option value="Manicure / Nail designer">Manicure / Nail designer</option>
+                          <option value="Maquiagem">Maquiagem</option>
+                          <option value="Limpeza de pele">Limpeza de pele</option>
+                          <option value="Cílios">Cílios</option>
+                          <option value="Sobrancelha">Sobrancelha</option>
+                          <option value="Estética">Estética</option>
+                          <option value="Depilação">Depilação</option>
+                          <option value="Massagem">Massagem</option>
+                          <option value="Outro">Outro</option>
+                        </select>
+                      </label>
+                      <label>WhatsApp do negócio<input id="registerWhatsapp" placeholder="11999999999" required /></label>
+                    </div>
+                  </section>
+
+                  <section class="guided-step">
+                    <div class="guided-step-number">2</div>
+                    <div class="guided-step-content">
+                      <h3>Link público</h3>
+                      <label>Nome do link público<input id="registerSlug" placeholder="sebastian-hair" required /></label>
+                      <p class="muted tiny">Use letras minúsculas, sem acento e com hífen. Exemplo: <strong>sebastian-hair</strong></p>
+                      <div class="public-link-preview">
+                        <span>Seu link será:</span>
+                        <strong id="registerSlugPreview">/p/sebastian-hair</strong>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section class="guided-step">
+                    <div class="guided-step-number">3</div>
+                    <div class="guided-step-content">
+                      <h3>Acesso ao painel</h3>
+                      <label>Email do dono<input id="registerEmail" type="email" required /></label>
+                      <label>Senha<input id="registerPassword" type="password" minlength="6" required /></label>
+                    </div>
+                  </section>
+
+                  <button class="btn primary">Criar conta e configurar agenda</button>
+                </form>
+              </div>
+            </div>
+          </section>
+
+          <section id="admin-dashboard" class="admin-view">
+            <div class="metrics-row">
+              <div class="card metric"><span>Hoje</span><strong id="metricToday">0</strong></div>
+              <div class="card metric"><span>Pendentes</span><strong id="metricPending">0</strong></div>
+              <div class="card metric"><span>Receita</span><strong id="metricRevenue">R$ 0</strong></div>
+              <div class="card metric"><span>Pix pendente</span><strong id="metricPixPending">R$ 0</strong></div>
+            </div>
+            <div class="card">
+              <h2>Proximos agendamentos</h2>
+              <button class="btn" id="sendRemindersBtn" type="button">Preparar lembretes WhatsApp de amanha</button>
+              <div id="nextAppointments"></div>
+            </div>
+          </section>
+
+          <section id="admin-settings" class="admin-view">
+            <div class="card">
+              <h2>Dados do negócio</h2>
+              <form id="settingsForm" class="form-stack">
+                <div class="two-cols">
+                  <label>Nome do negocio<input id="businessName" required /></label>
+                  <label>Nome do link público<input id="businessSlug" required /></label>
+                  <div class="public-link-preview settings-link-preview">
+                    <span>Link atual:</span>
+                    <strong id="businessSlugPreview">/p/seu-negocio</strong>
+                  </div>
+                </div>
+                <div class="two-cols">
+                  <label>Tipo de negócio
+                    <select id="businessType" required>
+                      <option value="Barbearia">Barbearia</option>
+                      <option value="Cabeleireiro / Salao de beleza">Cabeleireiro / Salao de beleza</option>
+                      <option value="Manicure / Nail designer">Manicure / Nail designer</option>
+                      <option value="Maquiagem">Maquiagem</option>
+                      <option value="Limpeza de pele">Limpeza de pele</option>
+                      <option value="Cilios">Cilios</option>
+                      <option value="Sobrancelha">Sobrancelha</option>
+                      <option value="Estetica">Estetica</option>
+                      <option value="Depilacao">Depilacao</option>
+                      <option value="Massagem">Massagem</option>
+                      <option value="Outro">Outro</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="two-cols">
+                  <label>WhatsApp<input id="businessWhatsapp" required /></label>
+                  <label>Endereco<input id="businessAddress" /></label>
+                </div>
+                <label>Descricao<textarea id="businessDesc" maxlength="150"></textarea></label>
+
+                <div class="settings-subsection">
+                  <div>
+                    <h3>Logo e identidade visual</h3>
+                    <p class="muted">Personalize o site com a cara do negocio. O dono pode usar codigo hexadecimal ou escolher pelo circulo de cores.</p>
+                  </div>
+
+                  <div class="business-brand-editor">
+                    <div class="professional-photo-column">
+                      <div class="photo-menu-anchor">
+                        <button type="button" id="businessLogoTrigger" class="photo-circle large business-logo-circle" aria-label="Adicionar logo do negocio">
+                          <span class="photo-circle-camera" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" focusable="false">
+                              <path d="M9 4.5 7.7 6H5.5A2.5 2.5 0 0 0 3 8.5v8A2.5 2.5 0 0 0 5.5 19h13a2.5 2.5 0 0 0 2.5-2.5v-8A2.5 2.5 0 0 0 18.5 6h-2.2L15 4.5H9Zm3 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0-1.7a2.3 2.3 0 1 1 0-4.6 2.3 2.3 0 0 1 0 4.6Z"></path>
+                            </svg>
+                          </span>
+                          <div id="businessLogoPlaceholder" class="photo-circle-placeholder">
+                            <span class="photo-circle-plus">+</span>
+                            <span>Logo</span>
+                          </div>
+                          <img id="businessLogoPreview" class="photo-circle-image hidden" alt="Pre-visualizacao da logo do negocio" />
+                          <span class="photo-circle-edit-badge">Adicionar</span>
+                        </button>
+                        <div id="businessLogoMenu" class="photo-circle-menu hidden">
+                          <button type="button" data-business-logo-action="upload">Escolher arquivo</button>
+                          <button type="button" data-business-logo-action="remove">Remover logo</button>
+                        </div>
+                      </div>
+                      <input id="businessPhotoFile" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+                    </div>
+
+                    <div class="business-brand-fields">
+                      <label>Logo por URL<input id="businessPhotoUrl" placeholder="https://exemplo.com/logo.png" /></label>
+                      <p class="muted tiny">Use URL ou envie arquivo. Se escolher arquivo, a URL sera preenchida automaticamente.</p>
+                      <div id="photoUploadResult"></div>
+                    </div>
+                  </div>
+
+                  <div class="theme-editor">
+                    <div id="themePreview" class="theme-preview">
+                      <span class="badge">Previa visual</span>
+                      <h3 id="themePreviewTitle">Agenda do negocio</h3>
+                      <p>Veja como as cores aparecem em botoes, textos e cards.</p>
+                      <div class="theme-preview-actions">
+                        <span class="theme-preview-button">Botao principal</span>
+                        <span class="theme-preview-chip">Destaque</span>
+                      </div>
+                    </div>
+
+                    <div class="theme-grid" aria-label="Editor de cores do site">
+                      <label class="theme-color-field">
+                        <span>Cor principal</span>
+                        <div class="color-control">
+                          <input type="color" id="themePrimaryPicker" aria-label="Escolher cor principal" />
+                          <input id="themePrimaryHex" maxlength="7" placeholder="#16a34a" />
+                        </div>
+                      </label>
+
+                      <label class="theme-color-field">
+                        <span>Cor principal escura</span>
+                        <div class="color-control">
+                          <input type="color" id="themePrimaryDarkPicker" aria-label="Escolher cor principal escura" />
+                          <input id="themePrimaryDarkHex" maxlength="7" placeholder="#15803d" />
+                        </div>
+                      </label>
+
+                      <label class="theme-color-field">
+                        <span>Fundo do site</span>
+                        <div class="color-control">
+                          <input type="color" id="themeBackgroundPicker" aria-label="Escolher cor de fundo" />
+                          <input id="themeBackgroundHex" maxlength="7" placeholder="#f6f7fb" />
+                        </div>
+                      </label>
+
+                      <label class="theme-color-field">
+                        <span>Fundo dos cards</span>
+                        <div class="color-control">
+                          <input type="color" id="themeCardPicker" aria-label="Escolher cor dos cards" />
+                          <input id="themeCardHex" maxlength="7" placeholder="#ffffff" />
+                        </div>
+                      </label>
+
+                      <label class="theme-color-field">
+                        <span>Texto principal</span>
+                        <div class="color-control">
+                          <input type="color" id="themeTextPicker" aria-label="Escolher cor do texto principal" />
+                          <input id="themeTextHex" maxlength="7" placeholder="#111827" />
+                        </div>
+                      </label>
+
+                      <label class="theme-color-field">
+                        <span>Texto secundario</span>
+                        <div class="color-control">
+                          <input type="color" id="themeMutedPicker" aria-label="Escolher cor do texto secundario" />
+                          <input id="themeMutedHex" maxlength="7" placeholder="#6b7280" />
+                        </div>
+                      </label>
+
+                      <label class="theme-color-field">
+                        <span>Linhas e bordas</span>
+                        <div class="color-control">
+                          <input type="color" id="themeLinePicker" aria-label="Escolher cor de linhas e bordas" />
+                          <input id="themeLineHex" maxlength="7" placeholder="#e5e7eb" />
+                        </div>
+                      </label>
+
+                      <label class="theme-color-field">
+                        <span>Fundo suave</span>
+                        <div class="color-control">
+                          <input type="color" id="themeSoftPicker" aria-label="Escolher cor de fundo suave" />
+                          <input id="themeSoftHex" maxlength="7" placeholder="#f3f4f6" />
+                        </div>
+                      </label>
+
+                      <label class="theme-color-field">
+                        <span>Cor de alerta/erro</span>
+                        <div class="color-control">
+                          <input type="color" id="themeDangerPicker" aria-label="Escolher cor de erro" />
+                          <input id="themeDangerHex" maxlength="7" placeholder="#dc2626" />
+                        </div>
+                      </label>
+
+                      <label class="theme-color-field">
+                        <span>Cor de aviso</span>
+                        <div class="color-control">
+                          <input type="color" id="themeWarningPicker" aria-label="Escolher cor de aviso" />
+                          <input id="themeWarningHex" maxlength="7" placeholder="#d97706" />
+                        </div>
+                      </label>
+
+                      <label class="theme-color-field">
+                        <span>Cor informativa</span>
+                        <div class="color-control">
+                          <input type="color" id="themeInfoPicker" aria-label="Escolher cor informativa" />
+                          <input id="themeInfoHex" maxlength="7" placeholder="#0284c7" />
+                        </div>
+                      </label>
+                    </div>
+
+                    <div class="theme-actions">
+                      <button class="btn" type="button" id="applyThemePreview">Aplicar previa</button>
+                      <button class="btn ghost" type="button" id="resetTheme">Restaurar padrao</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="two-cols">
+                  <label>Sinal Pix padrao<input id="defaultDeposit" type="number" min="0" /></label>
+                  <label>Chave Pix<input id="pixKey" /></label>
+                </div>
+                <div class="two-cols">
+                  <label>Cancelar ate X horas antes<input id="cancellationHours" type="number" min="0" /></label>
+                  <label>Remarcar ate X horas antes<input id="rescheduleHours" type="number" min="0" /></label>
+                </div>
+                <div class="toggle-row">
+                  <label><input id="allowClientCancel" type="checkbox" /> Cliente pode cancelar</label>
+                  <label><input id="allowClientReschedule" type="checkbox" /> Cliente pode remarcar</label>
+                </div>
+                <button class="btn primary">Salvar configuracao</button>
+              </form>
+            </div>
+          </section>
+
+          <section id="admin-professionals" class="admin-view">
+            <div class="card">
+              <h2>Profissionais</h2>
+              <p class="muted">Cadastre funcionarios/profissionais. Cada um pode ter foto propria e servicos com valores individuais.</p>
+              <form id="professionalForm" class="professional-form-panel">
+                <div class="professional-photo-column">
+                  <div class="photo-menu-anchor">
+                    <button type="button" id="professionalPhotoTrigger" class="photo-circle large" aria-label="Adicionar foto do profissional">
+                      <span class="photo-circle-camera" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" focusable="false">
+                          <path d="M9 4.5 7.7 6H5.5A2.5 2.5 0 0 0 3 8.5v8A2.5 2.5 0 0 0 5.5 19h13a2.5 2.5 0 0 0 2.5-2.5v-8A2.5 2.5 0 0 0 18.5 6h-2.2L15 4.5H9Zm3 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0-1.7a2.3 2.3 0 1 1 0-4.6 2.3 2.3 0 0 1 0 4.6Z"></path>
+                        </svg>
+                      </span>
+                      <div id="professionalPhotoPlaceholder" class="photo-circle-placeholder">
+                        <span class="photo-circle-plus">+</span>
+                        <span>Adicionar foto</span>
+                      </div>
+                      <img id="professionalPhotoPreview" class="photo-circle-image hidden" alt="Pre-visualizacao da foto do profissional" />
+                      <span class="photo-circle-edit-badge">Adicionar</span>
+                    </button>
+                    <div id="professionalPhotoMenu" class="photo-circle-menu hidden">
+                      <button type="button" data-form-photo-action="upload">Escolher foto</button>
+                      <button type="button" data-form-photo-action="remove">Remover foto</button>
+                    </div>
+                  </div>
+                  <input id="professionalPhotoFile" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+                  <input id="professionalPhotoUrl" type="hidden" />
+                  <p class="muted tiny center">Clique no circulo para adicionar, trocar ou remover a foto.</p>
+                </div>
+
+                <div class="professional-form-fields">
+                  <div class="professional-form-grid">
+                    <input id="professionalName" placeholder="Nome do profissional" required />
+                    <input id="professionalSpecialty" placeholder="Especialidade. Ex: manicure, barbeiro, maquiadora" />
+                  </div>
+                  <div class="schedule-builder compact-schedule-builder">
+                    <div class="schedule-builder-header">
+                      <strong>Dias e horarios de atendimento</strong>
+                      <span>Sem digitar manualmente</span>
+                    </div>
+
+                    <div class="week-days-selector" data-week-days="professional" aria-label="Dias em que o profissional trabalha"></div>
+
+                    <div class="schedule-grid">
+                      <label>Inicio padrão<select id="professionalStart"></select></label>
+                      <label>Fim padrão<select id="professionalEnd"></select></label>
+                      <label>Encaixes a cada<select id="professionalInterval"></select></label>
+                    </div>
+                    <div class="day-schedule-list" id="professionalDaySchedule"></div>
+                    <p class="muted tiny">Você pode deixar todos os dias iguais ou personalizar cada dia. Ex: sábado das 08:00 às 14:00.</p>
+                  </div>
+                  <button class="btn primary">Adicionar profissional</button>
+                </div>
+              </form>
+              <div id="professionalList"></div>
+
+              <div id="professionalScheduleEditor" class="schedule-editor hidden">
+                <div class="schedule-editor-panel">
+                  <div class="schedule-editor-header">
+                    <div>
+                      <span class="badge">Horarios do profissional</span>
+                      <h3 id="scheduleEditorTitle">Editar horarios</h3>
+                      <p class="muted">Escolha os dias trabalhados, inicio, fim e intervalo. O sistema cria os encaixes automaticamente.</p>
+                    </div>
+                    <button type="button" class="btn ghost" id="cancelScheduleEdit">Fechar</button>
+                  </div>
+
+                  <div class="week-days-selector editor-days-selector" data-week-days="schedule" aria-label="Dias em que o profissional trabalha"></div>
+
+                  <div class="schedule-grid schedule-grid-editor">
+                    <label>Inicio padrão<select id="scheduleStart"></select></label>
+                    <label>Fim padrão<select id="scheduleEnd"></select></label>
+                    <label>Encaixes a cada<select id="scheduleInterval"></select></label>
+                  </div>
+
+                  <div class="day-schedule-list" id="scheduleDaySchedule"></div>
+
+                  <div class="schedule-preview-box">
+                    <strong>Previa dos horarios</strong>
+                    <span id="schedulePreview">Selecione os dados para visualizar.</span>
+                  </div>
+
+                  <div class="schedule-editor-actions">
+                    <button type="button" class="btn primary" id="saveScheduleEdit">Salvar horarios</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section id="admin-services" class="admin-view">
+            <div class="card">
+              <h2>Serviços e preços por profissional</h2>
+              <p class="muted">O mesmo negocio pode ter varios profissionais. Cada profissional cadastra os servicos e valores que deseja atender.</p>
+              <div class="duration-help-card">
+                <strong>Duração bloqueia a agenda automaticamente.</strong>
+                <p>Exemplo: se uma progressiva dura 3h e o cliente marca 10:00, o próximo cliente só verá horários a partir de 13:00 para o mesmo profissional.</p>
+              </div>
+
+              <div class="service-presets">
+                <div class="section-title-row">
+                  <div>
+                    <h3>Modelos rápidos de serviços</h3>
+                    <p class="muted">Clique em um modelo para preencher nome, duração e intervalo automaticamente.</p>
+                  </div>
+                </div>
+                <div id="servicePresetList" class="preset-grid"></div>
+              </div>
+
+              <form id="serviceForm" class="service-form service-form-optimized">
+                <label>Profissional<select id="serviceProfessional" required></select></label>
+                <label>Nome do servico<input id="serviceName" placeholder="Ex: Progressiva" required /></label>
+                <label>Preco<input id="servicePrice" type="number" min="0" placeholder="Ex: 180" required /></label>
+                <label>Duração do atendimento<select id="serviceDuration" required></select></label>
+                <label>Intervalo após o atendimento<select id="serviceBuffer"></select></label>
+                <button class="btn primary">Adicionar</button>
+              </form>
+              <div id="serviceList"></div>
+            </div>
+          </section>
+
+          <section id="admin-appointments" class="admin-view">
+            <div class="card">
+              <h2>Agenda de horários</h2>
+              <div class="filter-row">
+                <button class="filter-btn active" data-filter="all">Todos</button>
+                <button class="filter-btn" data-filter="pending">Pendentes</button>
+                <button class="filter-btn" data-filter="confirmed">Confirmados</button>
+              </div>
+              <div id="adminAppointments"></div>
+            </div>
+          </section>
+
+          <section id="admin-blocks" class="admin-view">
+            <div class="card">
+              <h2>Bloqueios de emergencia</h2>
+              <form id="blockForm" class="service-form block-form">
+                <input type="date" id="blockDate" required />
+                <input id="blockStart" type="time" />
+                <input id="blockEnd" type="time" />
+                <input id="blockReason" placeholder="Motivo" />
+                <select id="blockProfessional"><option value="">Todos os profissionais</option></select>
+                <label class="check-inline"><input id="blockAllDay" type="checkbox" /> Dia todo</label>
+                <button class="btn primary">Bloquear</button>
+              </form>
+              <div id="blockList"></div>
+            </div>
+          </section>
+
+
+
+          <section id="admin-finance" class="admin-view">
+            <div class="card">
+              <h2>Dashboard financeiro</h2>
+              <div class="metrics-row">
+                <div class="card metric"><span>Receita do mês</span><strong id="financeGross">R$ 0</strong></div>
+                <div class="card metric"><span>Pix recebido</span><strong id="financePaid">R$ 0</strong></div>
+                <div class="card metric"><span>Pix pendente</span><strong id="financePending">R$ 0</strong></div>
+                <div class="card metric"><span>Cancelados</span><strong id="financeCancelled">0</strong></div>
+                <div class="card metric"><span>Serviço mais vendido</span><strong id="financeTopService">-</strong></div>
+                <div class="card metric"><span>Profissional destaque</span><strong id="financeTopProfessional">-</strong></div>
+              </div>
+              <div class="divider"></div>
+              <h3>Pagamentos Pix</h3>
+              <div id="paymentList"></div>
+            </div>
+          </section>
+
+          <section id="admin-users" class="admin-view">
+            <div class="card">
+              <h2>Usuarios ADM</h2>
+              <p class="muted">Apenas o dono do negócio deve criar usuários. Defina permissões por função.</p>
+              <form id="userForm" class="service-form">
+                <input id="userName" placeholder="Nome" required />
+                <input id="userEmail" type="email" placeholder="email@exemplo.com" required />
+                <input id="userPassword" type="password" minlength="6" placeholder="Senha inicial" required />
+                <select id="userRole">
+                  <option value="business_admin">Administrador operacional</option>
+                  <option value="staff">Atendimento/agenda</option>
+                  <option value="finance">Financeiro e pagamentos</option>
+                </select>
+                <div class="permission-list" id="permissionList">
+                  <label><input type="checkbox" data-permission="settings" /> Dados do negócio</label>
+                  <label><input type="checkbox" data-permission="professionals" /> Profissionais</label>
+                  <label><input type="checkbox" data-permission="services" /> Serviços e preços</label>
+                  <label><input type="checkbox" data-permission="appointments" /> Agenda</label>
+                  <label><input type="checkbox" data-permission="blocks" /> Bloqueios</label>
+                  <label><input type="checkbox" data-permission="clients" /> Clientes</label>
+                  <label><input type="checkbox" data-permission="finance" /> Financeiro</label>
+                  <label><input type="checkbox" data-permission="users" /> Usuários</label>
+                </div>
+                <button class="btn primary">Criar usuário</button>
+              </form>
+              <div id="userList"></div>
+            </div>
+          </section>
+
+          <section id="admin-clients" class="admin-view">
+            <div class="card">
+              <h2>Clientes e histórico</h2>
+              <div id="clientList"></div>
+            </div>
+            <div class="card wait-card">
+              <h2>Lista de espera</h2>
+              <div id="waitlistAdmin"></div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="js/app.js"></script>
+</body>
+</html>

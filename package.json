@@ -1,0 +1,13 @@
+{
+  "name": "cliqagenda",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Estrutura Node.js, Express e frontend para o CliqAgenda.",
+  "scripts": {
+    "dev": "npm run dev --prefix backend",
+    "start": "npm run migrate --prefix backend && npm run start --prefix backend",
+    "install:all": "npm install --prefix backend",
+    "build": "npm install --prefix backend",
+    "backup": "npm run backup --prefix backend"
+  }
+}
