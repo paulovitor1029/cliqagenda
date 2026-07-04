@@ -7,3 +7,8 @@ backend/uploads/*
 !backend/uploads/.gitkeep
 coverage/
 backend/backups/
+BACKUP_POLICY.md
+CLOUD_STORAGE.md
+DEPLOY_HOJE.md
+DOMINIO_E_BANCO_NUVEM.md
+PRODUCAO_CHECKLIST.md
