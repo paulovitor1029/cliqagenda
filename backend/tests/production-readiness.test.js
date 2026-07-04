@@ -9,19 +9,33 @@ function unique(prefix) {
 
 async function registerBusiness(prefix, extra = {}) {
   const slug = unique(prefix);
-  const email = `${slug}@teste.local`;
-  const response = await request(app)
-    .post("/api/auth/register")
+  const email = extra.email || `${slug}@teste.local`;
+  const password = extra.password || "senha123";
+  const adminLogin = await request(app)
+    .post("/api/auth/login")
+    .send({ email: "admin@cliqagenda.local", password: "Admin12345" })
+    .expect(200);
+  const adminCookie = adminLogin.headers["set-cookie"][0].split(";")[0];
+
+  await request(app)
+    .post("/api/system/businesses")
+    .set("Cookie", adminCookie)
     .send({
       name: `Negocio ${prefix}`,
       businessType: "Outro",
       slug,
       whatsapp: "11999999999",
-      email,
-      password: "senha123",
-      ...extra
+      ownerName: `Dono ${prefix}`,
+      ownerEmail: email,
+      ownerPassword: password,
+      businessType: extra.businessType || "Outro"
     })
     .expect(201);
+
+  const response = await request(app)
+    .post("/api/auth/login")
+    .send({ email, password })
+    .expect(200);
 
   const cookie = response.headers["set-cookie"][0].split(";")[0];
   assert.deepEqual(response.body.professionals, []);
@@ -52,7 +66,7 @@ async function registerBusiness(prefix, extra = {}) {
     ...response.body,
     cookie,
     email,
-    password: "senha123",
+    password,
     professionals: [professionalResponse.body.professional],
     services: [serviceResponse.body.service]
   };

@@ -9,17 +9,30 @@ function unique(prefix) {
 
 async function registerBusiness(prefix, businessType = "Outro") {
   const slug = unique(prefix);
-  const response = await request(app)
-    .post("/api/auth/register")
+  const adminLogin = await request(app)
+    .post("/api/auth/login")
+    .send({ email: "admin@cliqagenda.local", password: "Admin12345" })
+    .expect(200);
+  const adminCookie = adminLogin.headers["set-cookie"][0].split(";")[0];
+
+  const createResponse = await request(app)
+    .post("/api/system/businesses")
+    .set("Cookie", adminCookie)
     .send({
       name: `Negocio ${prefix}`,
       businessType,
       slug,
       whatsapp: "11999999999",
-      email: `${slug}@teste.local`,
-      password: "senha123"
+      ownerName: `Dono ${prefix}`,
+      ownerEmail: `${slug}@teste.local`,
+      ownerPassword: "senha123"
     })
     .expect(201);
+
+  const response = await request(app)
+    .post("/api/auth/login")
+    .send({ email: `${slug}@teste.local`, password: "senha123" })
+    .expect(200);
 
   assert.equal(response.body.business.slug, slug);
   assert.equal(response.body.business.businessType, businessType);
@@ -110,13 +123,13 @@ test("link publico do negocio exibe seus profissionais", async () => {
   assert.ok(publicPage.body.services.some(service => service.professionalId === secondResponse.body.professional.id));
 });
 
-test("POST /api/auth/register exige dados obrigatorios", async () => {
+test("POST /api/auth/register bloqueia auto-cadastro de negocios", async () => {
   const response = await request(app)
     .post("/api/auth/register")
     .send({ name: "Teste" })
-    .expect(400);
+    .expect(403);
 
-  assert.match(response.body.message, /Informe nome/i);
+  assert.match(response.body.message, /cadastro público/i);
 });
 
 test("multiempresa: cada login acessa somente dados da propria empresa", async () => {

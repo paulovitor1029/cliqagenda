@@ -209,7 +209,7 @@ function slugify(text) {
 
 function publicBusinessContext(db, slug) {
   const business = db.businesses.find(item => item.slug === slug);
-  if (!business) return null;
+  if (!business || business.active === false) return null;
   const professionals = db.professionals.filter(item => item.businessId === business.id && item.active);
   return { business, professionals };
 }
@@ -394,8 +394,39 @@ function businessBundle(db, business) {
   };
 }
 
+function systemUserPayload(user) {
+  return { id: user.id, name: user.name, email: user.email, role: user.role, permissions: user.permissions || {} };
+}
+
+function systemBundle(db, user) {
+  return {
+    system: true,
+    user: systemUserPayload(user),
+    businesses: db.businesses.map(business => ({
+      ...publicBusiness(business),
+      users: db.users.filter(item => item.businessId === business.id || business.ownerId === item.id).length,
+      professionals: db.professionals.filter(item => item.businessId === business.id).length,
+      appointments: db.appointments.filter(item => item.businessId === business.id).length
+    })),
+    users: db.users.map(systemUserPayload),
+    totals: {
+      businesses: db.businesses.length,
+      activeBusinesses: db.businesses.filter(item => item.active !== false).length,
+      users: db.users.length,
+      appointments: db.appointments.length
+    }
+  };
+}
+
+function requireSystemAdmin(req, res, next) {
+  if (req.user && req.user.role === "system_admin") return next();
+  return res.status(403).json({ message: "Acesso permitido apenas para administradores gerais." });
+}
+
 
 router.post("/auth/register", async (req, res) => {
+  return res.status(403).json({ message: "O cadastro público de negócios está desativado. Solicite acesso ao administrador geral do sistema." });
+/*
   const name = String(req.body.name || "").trim().slice(0, 100);
   const email = String(req.body.email || "").trim().toLowerCase();
   const password = String(req.body.password || "");
@@ -452,6 +483,7 @@ router.post("/auth/register", async (req, res) => {
   const { token, ...payload } = result;
   setSessionCookie(res, token);
   return res.status(201).json(payload);
+*/
 });
 
 router.post("/auth/password/forgot", async (req, res) => {
@@ -525,8 +557,19 @@ router.post("/auth/login", async (req, res) => {
   const result = await updateDb(db => {
     const user = db.users.find(item => item.email === email);
     if (!user || !verifyPassword(password, user.salt, user.hash)) return { error: "Email ou senha invalidos." };
+    if (user.role === "system_admin") {
+      const token = crypto.randomBytes(32).toString("hex");
+      db.sessions.push({
+        id: id("ses"),
+        userId: user.id,
+        token: tokenHash(token),
+        expiresAt: new Date(Date.now() + tokenDays * 864e5).toISOString()
+      });
+      return { token, ...systemBundle(db, user) };
+    }
     const business = db.businesses.find(item => item.id === user.businessId || item.ownerId === user.id);
     if (!business) return { error: "Usuario sem negocio vinculado." };
+    if (business.active === false) return { error: "Negócio bloqueado. Entre em contato com o suporte." };
 
     const token = crypto.randomBytes(32).toString("hex");
     db.sessions.push({
@@ -556,10 +599,145 @@ router.post("/auth/logout", auth, async (req, res) => {
 router.get("/auth/me", auth, async (req, res) => {
   const db = await readDb();
   res.set("Cache-Control", "no-store");
+  if (req.user.role === "system_admin") return res.json(systemBundle(db, req.user));
   res.json({
     user: { id: req.user.id, name: req.user.name, email: req.user.email, role: req.user.role, permissions: req.user.permissions || {} },
     ...businessBundle(db, req.business)
   });
+});
+
+router.get("/system", auth, requireSystemAdmin, async (req, res) => {
+  const db = await readDb();
+  res.set("Cache-Control", "no-store");
+  res.json(systemBundle(db, req.user));
+});
+
+router.post("/system/businesses", auth, requireSystemAdmin, async (req, res) => {
+  const name = String(req.body.name || "").trim().slice(0, 100);
+  const slug = slugify(req.body.slug || name).slice(0, 60);
+  const whatsapp = onlyNumbers(req.body.whatsapp);
+  const ownerName = String(req.body.ownerName || name).trim().slice(0, 100);
+  const ownerEmail = String(req.body.ownerEmail || "").trim().toLowerCase();
+  const ownerPassword = String(req.body.ownerPassword || "");
+  const businessType = String(req.body.businessType || "Outro").trim().slice(0, 60) || "Outro";
+
+  if (!name || slug.length < 3 || whatsapp.length < 10 || whatsapp.length > 15 || !ownerName || !validEmail(ownerEmail) || ownerPassword.length < 8 || ownerPassword.length > 128) {
+    return res.status(400).json({ message: "Informe negócio, identificador, WhatsApp, proprietário, e-mail e senha de 8+ caracteres." });
+  }
+
+  const result = await updateDb(db => {
+    if (db.businesses.some(business => business.slug === slug)) return { status: 409, error: "Identificador do negócio já está em uso." };
+    if (db.users.some(user => user.email === ownerEmail)) return { status: 409, error: "E-mail já cadastrado." };
+
+    const userId = id("usr");
+    const businessId = id("biz");
+    const passwordData = hashPassword(ownerPassword);
+    const user = { id: userId, name: ownerName, email: ownerEmail, role: "owner", businessId, permissions: defaultPermissions("owner"), ...passwordData, createdAt: new Date().toISOString() };
+    const business = {
+      id: businessId,
+      ownerId: userId,
+      name,
+      slug,
+      whatsapp,
+      businessType,
+      address: String(req.body.address || "").trim(),
+      description: String(req.body.description || "Agenda online do negócio.").trim().slice(0, 150),
+      photoUrl: "",
+      theme: sanitizeTheme(req.body.theme),
+      deposit: 0,
+      pixKey: "",
+      cancellationHours: 6,
+      rescheduleHours: 6,
+      allowClientCancel: true,
+      allowClientReschedule: true,
+      active: true,
+      workingHours: ["09:00", "09:30", "10:00", "10:30", "11:00", "13:00", "13:30", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30", "17:00"]
+    };
+    db.users.push(user);
+    db.businesses.push(business);
+    return { business: publicBusiness(business), user: systemUserPayload(user) };
+  });
+
+  if (result.error) return res.status(result.status || 400).json({ message: result.error });
+  res.status(201).json(result);
+});
+
+router.post("/system/users", auth, requireSystemAdmin, async (req, res) => {
+  const name = String(req.body.name || "").trim().slice(0, 100);
+  const email = String(req.body.email || "").trim().toLowerCase();
+  const password = String(req.body.password || "");
+  const role = String(req.body.role || "system_admin").trim();
+  const businessId = String(req.body.businessId || "").trim();
+  const allowedRoles = ["system_admin", "owner", "business_admin", "staff", "finance"];
+
+  if (!name || !validEmail(email) || password.length < 8 || password.length > 128 || !allowedRoles.includes(role)) {
+    return res.status(400).json({ message: "Informe nome, e-mail válido, senha de 8+ caracteres e função válida." });
+  }
+  if (role !== "system_admin" && !businessId) return res.status(400).json({ message: "Selecione um negócio para usuários de empresa." });
+
+  const result = await updateDb(db => {
+    if (db.users.some(user => user.email === email)) return { status: 409, error: "E-mail já cadastrado." };
+    const business = role === "system_admin" ? null : db.businesses.find(item => item.id === businessId);
+    if (role !== "system_admin" && !business) return { status: 404, error: "Negócio não encontrado." };
+    const passwordData = hashPassword(password);
+    const user = {
+      id: id("usr"),
+      name,
+      email,
+      role,
+      businessId: business ? business.id : "",
+      permissions: defaultPermissions(role),
+      ...passwordData,
+      createdAt: new Date().toISOString()
+    };
+    db.users.push(user);
+    if (business && role === "owner" && !business.ownerId) business.ownerId = user.id;
+    return { user: systemUserPayload(user) };
+  });
+
+  if (result.error) return res.status(result.status || 400).json({ message: result.error });
+  res.status(201).json(result);
+});
+
+router.patch("/system/businesses/:id/active", auth, requireSystemAdmin, async (req, res) => {
+  const result = await updateDb(db => {
+    const business = db.businesses.find(item => item.id === req.params.id);
+    if (!business) return { status: 404, error: "Negócio não encontrado." };
+    business.active = Boolean(req.body.active);
+    return { business: publicBusiness(business) };
+  });
+  if (result.error) return res.status(result.status || 400).json({ message: result.error });
+  res.json(result);
+});
+
+router.delete("/system/businesses/:id", auth, requireSystemAdmin, async (req, res) => {
+  await updateDb(db => {
+    const business = db.businesses.find(item => item.id === req.params.id);
+    db.businesses = db.businesses.filter(item => item.id !== req.params.id);
+    db.professionals = db.professionals.filter(item => item.businessId !== req.params.id);
+    db.services = db.services.filter(item => item.businessId !== req.params.id);
+    db.appointments = db.appointments.filter(item => item.businessId !== req.params.id);
+    db.payments = (db.payments || []).filter(item => item.businessId !== req.params.id);
+    db.waitlist = db.waitlist.filter(item => item.businessId !== req.params.id);
+    db.blocks = db.blocks.filter(item => item.businessId !== req.params.id);
+    db.reminders = (db.reminders || []).filter(item => item.businessId !== req.params.id);
+    db.users = db.users.map(user => user.businessId === req.params.id || (business && business.ownerId === user.id)
+      ? { ...user, businessId: "", role: user.role === "owner" ? "business_admin" : user.role }
+      : user);
+  });
+  res.status(204).end();
+});
+
+router.delete("/system/users/:id", auth, requireSystemAdmin, async (req, res) => {
+  if (req.params.id === req.user.id) return res.status(400).json({ message: "Você não pode remover o próprio usuário." });
+  await updateDb(db => {
+    db.users = db.users.filter(item => item.id !== req.params.id);
+    db.businesses.forEach(business => {
+      if (business.ownerId === req.params.id) business.ownerId = "";
+    });
+    db.sessions = db.sessions.filter(session => session.userId !== req.params.id);
+  });
+  res.status(204).end();
 });
 
 router.get("/public/:slug", async (req, res) => {

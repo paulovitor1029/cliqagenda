@@ -185,6 +185,14 @@ legend { margin-bottom: 6px; color: #344054; font-size: .82rem; font-weight: 800
 .admin-content { width: min(1280px, calc(100% - 260px)); margin-left: 260px; padding: 28px clamp(18px, 4vw, 48px) 60px; overflow: hidden; }
 .admin-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 24px; }
 .admin-header h1 { margin: 0; font-size: clamp(2rem, 4vw, 3rem); }
+.system-page { min-height: 100vh; color: var(--text); background: var(--app-bg); }
+.system-sidebar {
+  position: sticky; top: 0; z-index: 20; display: flex; justify-content: space-between; align-items: center; gap: 16px;
+  padding: 14px clamp(18px, 4vw, 48px); border-bottom: 1px solid var(--line); background: var(--card);
+  box-shadow: 0 6px 20px rgba(16, 24, 40, .06);
+}
+.system-sidebar .logout { width: auto; margin: 0; }
+.system-content { width: min(1280px, 100%); margin: auto; padding: 28px clamp(18px, 4vw, 48px) 60px; }
 .panel { margin-bottom: 18px; padding: 24px; }
 .panel > header p { margin: -7px 0 18px; }
 .customization-grid { display: grid; grid-template-columns: minmax(260px, .8fr) minmax(320px, 1.2fr); gap: 18px; align-items: start; }

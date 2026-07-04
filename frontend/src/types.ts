@@ -34,6 +34,7 @@ export interface Business {
   rescheduleHours: number;
   allowClientCancel: boolean;
   allowClientReschedule: boolean;
+  active: boolean;
   workingHours: string[];
 }
 
@@ -144,4 +145,23 @@ export interface PublicBundle {
   professionals: Professional[];
   services: Service[];
   blocks: ScheduleBlock[];
+}
+
+export interface SystemBusiness extends Business {
+  users: number;
+  professionals: number;
+  appointments: number;
+}
+
+export interface SystemBundle {
+  system: true;
+  user: User;
+  businesses: SystemBusiness[];
+  users: User[];
+  totals: {
+    businesses: number;
+    activeBusinesses: number;
+    users: number;
+    appointments: number;
+  };
 }

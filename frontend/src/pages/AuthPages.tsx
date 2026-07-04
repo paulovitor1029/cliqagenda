@@ -1,6 +1,6 @@
 import { FormEvent, ReactNode, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { api, slugify } from "../api";
+import { api } from "../api";
 
 function AuthLayout({ children, title, description }: { children: ReactNode; title: string; description: string }) {
   return (
@@ -40,13 +40,14 @@ export function LoginPage() {
     setLoading(true);
     setError("");
     try {
-      await api("/auth/login", {
+      const data = await api<{ user?: { role: string }; system?: boolean }>("/auth/login", {
         method: "POST",
         body: JSON.stringify({ email: form.get("email"), password: form.get("password") })
       });
       localStorage.setItem("cliqagenda_session_event", `login:${Date.now()}`);
       const next = searchParams.get("next");
-      navigate(next?.startsWith("/") && !next.startsWith("//") ? next : "/admin", { replace: true });
+      const fallback = data.system || data.user?.role === "system_admin" ? "/sistema" : "/admin";
+      navigate(next?.startsWith("/") && !next.startsWith("//") ? next : fallback, { replace: true });
     } catch (currentError) {
       setError(currentError instanceof Error ? currentError.message : "Falha no login.");
     } finally {
@@ -108,7 +109,7 @@ export function LoginPage() {
             <button className="button primary" disabled={loading}>{loading ? "Aguarde..." : "Entrar"}</button>
           </form>
           <button className="text-button" onClick={() => { setMode("forgot"); setError(""); setMessage(""); }}>Esqueci minha senha</button>
-          <div className="auth-switch">Novo por aqui? <Link to="/cadastro">Cadastre seu negócio</Link></div>
+          <div className="auth-switch">Novo por aqui? Solicite acesso ao administrador geral.</div>
         </>
       )}
 
@@ -142,76 +143,12 @@ export function LoginPage() {
 }
 
 export function RegisterPage() {
-  const navigate = useNavigate();
-  const [name, setName] = useState("");
-  const [slug, setSlug] = useState("");
-  const [slugEdited, setSlugEdited] = useState(false);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const password = String(form.get("password") || "");
-    if (password !== form.get("confirmation")) {
-      setError("As senhas não coincidem.");
-      return;
-    }
-    setLoading(true);
-    setError("");
-    try {
-      await api("/auth/register", {
-        method: "POST",
-        body: JSON.stringify({
-          name,
-          slug,
-          businessType: form.get("businessType"),
-          whatsapp: form.get("whatsapp"),
-          email: form.get("email"),
-          password
-        })
-      });
-      localStorage.setItem("cliqagenda_session_event", `login:${Date.now()}`);
-      navigate("/admin", { replace: true });
-    } catch (currentError) {
-      setError(currentError instanceof Error ? currentError.message : "Falha no cadastro.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
   return (
-    <AuthLayout title="Crie a estrutura do seu negócio." description="A conta inicial pertence ao proprietário. Depois do acesso, cadastre os profissionais e compartilhe o link público do negócio.">
-      <span className="eyebrow">Nova conta</span>
-      <h2>Cadastrar negócio</h2>
-      <form className="form-stack" onSubmit={submit}>
-        <label>Nome do negócio
-          <input value={name} onChange={(event) => {
-            setName(event.target.value);
-            if (!slugEdited) setSlug(slugify(event.target.value));
-          }} maxLength={100} required />
-        </label>
-        <label>Identificador interno
-          <input value={slug} onChange={(event) => { setSlugEdited(true); setSlug(slugify(event.target.value)); }} minLength={3} maxLength={60} required />
-        </label>
-        <div className="two-columns">
-          <label>Tipo
-            <select name="businessType" defaultValue="Outro">
-              <option>Barbearia</option><option>Salão de beleza</option><option>Estética</option>
-              <option>Manicure / Nail designer</option><option>Massagem</option><option>Outro</option>
-            </select>
-          </label>
-          <label>WhatsApp<input name="whatsapp" inputMode="numeric" minLength={10} required /></label>
-        </div>
-        <label>E-mail do proprietário<input name="email" type="email" autoComplete="username" required /></label>
-        <div className="two-columns">
-          <label>Senha<input name="password" type="password" minLength={8} autoComplete="new-password" required /></label>
-          <label>Confirmar senha<input name="confirmation" type="password" minLength={8} autoComplete="new-password" required /></label>
-        </div>
-        <button className="button primary" disabled={loading}>{loading ? "Criando..." : "Criar conta"}</button>
-      </form>
-      {error && <div className="message error">{error}</div>}
-      <div className="auth-switch">Já possui conta? <Link to="/login">Entrar</Link></div>
+    <AuthLayout title="Cadastro somente por convite." description="Novos negócios e usuários são criados por um administrador geral do sistema.">
+      <span className="eyebrow">Cadastro desativado</span>
+      <h2>Solicite seu acesso</h2>
+      <p>O auto-cadastro de empresas foi removido. Peça ao administrador geral para criar o negócio e o usuário inicial.</p>
+      <Link className="button primary" to="/login">Ir para o login</Link>
     </AuthLayout>
   );
 }

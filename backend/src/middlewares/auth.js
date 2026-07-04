@@ -39,10 +39,24 @@ async function resolveAuthContext(req) {
   }
 
   const user = db.users.find(item => item.id === session.userId);
+  if (user && user.role === "system_admin") {
+    return {
+      context: {
+        user,
+        business: null,
+        permissions: {},
+        token,
+        sessionToken: session.token
+      },
+      reason: ""
+    };
+  }
+
   const business = user
     ? db.businesses.find(item => item.id === user.businessId || item.ownerId === session.userId)
     : null;
   if (!user || !business) return { context: null, reason: "unlinked" };
+  if (business.active === false) return { context: null, reason: "blocked" };
 
   return {
     context: {
@@ -62,7 +76,9 @@ async function auth(req, res, next) {
     if (!context) {
       const message = reason === "missing"
         ? "Login necessario."
-        : reason === "unlinked"
+        : reason === "blocked"
+          ? "Negócio bloqueado. Entre em contato com o suporte."
+          : reason === "unlinked"
           ? "Usuario sem negocio vinculado."
           : "Sessao expirada. Entre novamente.";
       return res.status(401).json({ message });

@@ -117,6 +117,7 @@ async function ensureDatabase() {
           reschedule_hours INTEGER NOT NULL DEFAULT 6,
           allow_client_cancel BOOLEAN NOT NULL DEFAULT TRUE,
           allow_client_reschedule BOOLEAN NOT NULL DEFAULT TRUE,
+          active BOOLEAN NOT NULL DEFAULT TRUE,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
@@ -414,8 +415,8 @@ async function persistDb(db, existingClient = null) {
       await client.query(
         `INSERT INTO businesses (
           id, owner_id, name, slug, whatsapp, business_type, address, description, photo_url, theme, deposit, pix_key,
-          cancellation_hours, reschedule_hours, allow_client_cancel, allow_client_reschedule
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14, $15, $16)
+          cancellation_hours, reschedule_hours, allow_client_cancel, allow_client_reschedule, active
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14, $15, $16, $17)
         ON CONFLICT (id) DO UPDATE SET
           owner_id = EXCLUDED.owner_id,
           name = EXCLUDED.name,
@@ -432,6 +433,7 @@ async function persistDb(db, existingClient = null) {
           reschedule_hours = EXCLUDED.reschedule_hours,
           allow_client_cancel = EXCLUDED.allow_client_cancel,
           allow_client_reschedule = EXCLUDED.allow_client_reschedule,
+          active = EXCLUDED.active,
           updated_at = NOW()`,
         [
           business.id,
@@ -449,7 +451,8 @@ async function persistDb(db, existingClient = null) {
           business.cancellationHours || 0,
           business.rescheduleHours || 0,
           Boolean(business.allowClientCancel),
-          Boolean(business.allowClientReschedule)
+          Boolean(business.allowClientReschedule),
+          business.active !== false
         ]
       );
       await client.query("DELETE FROM business_working_hours WHERE business_id = $1", [business.id]);
@@ -676,6 +679,7 @@ function groupProfessionalHours(rows) {
 }
 
 function defaultPermissions(role = "business_admin") {
+  if (role === "system_admin") return {};
   if (role === "owner") return { settings: true, professionals: true, services: true, appointments: true, blocks: true, clients: true, finance: true, users: true };
   if (role === "finance") return { settings: false, professionals: false, services: false, appointments: false, blocks: false, clients: false, finance: true, users: false };
   if (role === "staff") return { settings: false, professionals: false, services: false, appointments: true, blocks: false, clients: true, finance: false, users: false };
@@ -736,6 +740,7 @@ function businessFromRow(row, workingHours) {
     rescheduleHours: Number(row.reschedule_hours || 0),
     allowClientCancel: Boolean(row.allow_client_cancel),
     allowClientReschedule: Boolean(row.allow_client_reschedule),
+    active: row.active !== false,
     workingHours: workingHours.length ? workingHours : defaultWorkingHours
   };
 }
@@ -887,6 +892,7 @@ function publicBusiness(business) {
     rescheduleHours: Number(business.rescheduleHours || 0),
     allowClientCancel: Boolean(business.allowClientCancel),
     allowClientReschedule: Boolean(business.allowClientReschedule),
+    active: business.active !== false,
     workingHours: business.workingHours || defaultWorkingHours
   };
 }
