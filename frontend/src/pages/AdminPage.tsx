@@ -147,6 +147,33 @@ function businessPayload(business: Business, overrides: Partial<Business> = {}) 
   };
 }
 
+const appointmentStatusLabel: Record<string, string> = {
+  pending: "Pendente",
+  confirmed: "Confirmado",
+  done: "Concluído",
+  noshow: "Não compareceu",
+  cancelled: "Cancelado"
+};
+
+const paymentStatusLabel: Record<string, string> = {
+  pending: "Pendente",
+  paid: "Pago",
+  cancelled: "Cancelado",
+  expired: "Expirado",
+  refunded: "Estornado"
+};
+
+const roleLabel: Record<string, string> = {
+  owner: "Proprietário",
+  business_admin: "Administrador",
+  staff: "Atendimento",
+  finance: "Financeiro"
+};
+
+function labelFrom(map: Record<string, string>, value: string) {
+  return map[value] || value || "-";
+}
+
 function DashboardSection({ bundle }: { bundle: AdminBundle }) {
   const today = new Date().toISOString().slice(0, 10);
   const todayAppointments = bundle.appointments.filter(item => item.date === today && item.status !== "cancelled");
@@ -694,7 +721,7 @@ function FinanceSection({ bundle }: { bundle: AdminBundle }) {
       </div>
       <Panel title="Pagamentos">
         {bundle.payments.map(payment => (
-          <div className="row-item" key={payment.id}><span>{money(payment.amount)} · {payment.status}</span><select value={payment.status} onChange={event => update.mutate({ id: payment.id, status: event.target.value })}><option value="pending">Pendente</option><option value="paid">Pago</option><option value="cancelled">Cancelado</option><option value="refunded">Estornado</option></select></div>
+          <div className="row-item" key={payment.id}><span>{money(payment.amount)} · {labelFrom(paymentStatusLabel, payment.status)}</span><select value={payment.status} onChange={event => update.mutate({ id: payment.id, status: event.target.value })}><option value="pending">Pendente</option><option value="paid">Pago</option><option value="cancelled">Cancelado</option><option value="refunded">Estornado</option></select></div>
         ))}
       </Panel>
     </>
@@ -712,7 +739,7 @@ function UsersSection({ bundle }: { bundle: AdminBundle }) {
   return (
     <>
       {bundle.user.role === "owner" && <Panel title="Novo usuário"><form className="form-grid" onSubmit={submit}><label>Nome<input name="name" required /></label><label>E-mail<input name="email" type="email" required /></label><label>Senha<input name="password" type="password" minLength={8} required /></label><label>Função<select name="role"><option value="business_admin">Administrador</option><option value="staff">Atendimento</option><option value="finance">Financeiro</option></select></label><SubmitButton pending={create.isPending}>Criar usuário</SubmitButton></form><MutationMessage mutation={create} /></Panel>}
-      <div className="cards-list">{bundle.users.map(user => <article className="card list-card" key={user.id}><div><h3>{user.name}</h3><p>{user.email} · {user.role}</p></div></article>)}</div>
+      <div className="cards-list">{bundle.users.map(user => <article className="card list-card" key={user.id}><div><h3>{user.name}</h3><p>{user.email} · {labelFrom(roleLabel, user.role)}</p></div></article>)}</div>
     </>
   );
 }
@@ -735,7 +762,7 @@ function ClientsSection({ appointments, waitlist }: { appointments: Appointment[
 
 function AppointmentList({ appointments, compact = false, actions }: { appointments: Appointment[]; compact?: boolean; actions?: (appointment: Appointment) => ReactNode }) {
   if (!appointments.length) return <div className="empty-state">Nenhum agendamento encontrado.</div>;
-  return <div className="table-list">{appointments.map(item => <div className="row-item" key={item.id}><span><strong>{item.customer} · {item.service}</strong><small>{item.professionalName} · {formatDate(item.date)} às {item.time} · {item.code}</small></span>{!compact && actions?.(item)}<span className={`status ${item.status}`}>{item.status}</span></div>)}</div>;
+  return <div className="table-list">{appointments.map(item => <div className="row-item" key={item.id}><span><strong>{item.customer} · {item.service}</strong><small>{item.professionalName} · {formatDate(item.date)} às {item.time} · {item.code}</small></span>{!compact && actions?.(item)}<span className={`status ${item.status}`}>{labelFrom(appointmentStatusLabel, item.status)}</span></div>)}</div>;
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
