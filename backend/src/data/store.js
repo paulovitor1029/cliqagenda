@@ -271,6 +271,15 @@ async function ensureDatabase() {
         );
 
         CREATE INDEX IF NOT EXISTS sessions_token_idx ON sessions (token);
+
+        CREATE TABLE IF NOT EXISTS uploaded_images (
+          id TEXT PRIMARY KEY,
+          filename TEXT NOT NULL DEFAULT '',
+          mime_type TEXT NOT NULL,
+          byte_size INTEGER NOT NULL,
+          data BYTEA NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
       `);
 
     })();

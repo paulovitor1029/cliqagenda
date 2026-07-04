@@ -259,3 +259,8 @@ PUBLIC_BASE_URL=https://seudominio.com.br
 - O cadastro ficou direto: dados do negócio, link público e acesso ao painel.
 - CSS reforçado para celular, tablet e desktop com ajustes de grid, menus, cards, formulários e botões.
 - Foi adicionada uma migration de limpeza para remover a coluna antiga de plano, caso ela exista em algum banco local anterior.
+
+
+
+admin@cliqagenda.local
+Admin12345

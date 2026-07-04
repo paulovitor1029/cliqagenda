@@ -1,36 +1,64 @@
 const fs = require("fs/promises");
+const path = require("path");
+const crypto = require("crypto");
+require("dotenv").config();
+const { Pool } = require("pg");
 
-async function uploadToCloudinary(file) {
-  const { v2: cloudinary } = require("cloudinary");
+const dbConfig = process.env.DATABASE_URL
+  ? {
+      connectionString: process.env.DATABASE_URL,
+      ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : undefined
+    }
+  : {
+      host: process.env.DB_HOST || process.env.PGHOST || "localhost",
+      port: Number(process.env.DB_PORT || process.env.PGPORT) || 5432,
+      database: process.env.DB_NAME || process.env.PGDATABASE || "cliqagenda",
+      user: process.env.DB_USER || process.env.PGUSER || "postgres",
+      password: process.env.DB_PASS || process.env.PGPASSWORD || "admin",
+      ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : undefined
+    };
 
-  cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET
-  });
-
-  const folder = process.env.CLOUDINARY_FOLDER || "cliqagenda";
-  const result = await cloudinary.uploader.upload(file.path, {
-    folder,
-    resource_type: "image",
-    overwrite: false
-  });
-
-  await fs.unlink(file.path).catch(() => null);
-  return result.secure_url;
-}
+const pool = new Pool(dbConfig);
 
 async function resolveUploadedImageUrl(file) {
   if (!file) throw new Error("Arquivo de imagem ausente.");
 
-  if (process.env.STORAGE_PROVIDER === "cloudinary") {
-    if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
-      throw new Error("Cloudinary nao configurado. Verifique CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY e CLOUDINARY_API_SECRET.");
-    }
-    return uploadToCloudinary(file);
-  }
-
-  return `/uploads/${file.filename}`;
+  const id = `img_${crypto.randomBytes(12).toString("hex")}`;
+  const data = await fs.readFile(file.path);
+  await pool.query(
+    `INSERT INTO uploaded_images (id, filename, mime_type, byte_size, data)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [id, file.originalname || file.filename || "foto.jpg", file.mimetype || "image/jpeg", data.length, data]
+  );
+  await fs.unlink(file.path).catch(() => null);
+  return `/api/images/${id}`;
 }
 
-module.exports = { resolveUploadedImageUrl };
+function imageIdFromUrl(url) {
+  const match = String(url || "").match(/^\/api\/images\/([a-zA-Z0-9_-]+)$/);
+  return match ? match[1] : "";
+}
+
+async function deleteStoredImageByUrl(url) {
+  const imageId = imageIdFromUrl(url);
+  if (imageId) {
+    await pool.query("DELETE FROM uploaded_images WHERE id = $1", [imageId]);
+    return;
+  }
+
+  if (String(url || "").startsWith("/uploads/")) {
+    const uploadsDir = path.resolve(__dirname, "../../uploads");
+    const filename = path.basename(url);
+    await fs.unlink(path.join(uploadsDir, filename)).catch(() => null);
+  }
+}
+
+async function getStoredImage(id) {
+  const result = await pool.query(
+    "SELECT id, filename, mime_type, byte_size, data, created_at FROM uploaded_images WHERE id = $1",
+    [id]
+  );
+  return result.rows[0] || null;
+}
+
+module.exports = { deleteStoredImageByUrl, getStoredImage, resolveUploadedImageUrl };

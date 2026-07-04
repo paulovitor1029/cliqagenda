@@ -296,6 +296,14 @@ legend { margin-bottom: 6px; color: #344054; font-size: .82rem; font-weight: 800
 .row-item { border-bottom: 1px solid var(--line); }.row-item:last-child { border-bottom: 0; }
 .row-item > span { min-width: 0; display: grid; gap: 3px; overflow-wrap: anywhere; }.row-item small { color: var(--muted); }
 .row-item select { width: auto; min-width: 140px; margin: 0; }
+.bulk-actions {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 12px; padding: 12px;
+  border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--card) 84%, var(--app-bg));
+}
+.bulk-actions > span { color: var(--muted); font-size: .82rem; font-weight: 800; }
+.bulk-actions .button { margin-left: auto; }
+.row-select { flex: 0 0 auto; display: inline-grid; place-items: center; width: 32px; height: 32px; }
+.row-select input { width: 18px; height: 18px; margin: 0; }
 .status { width: fit-content; border-radius: 99px; padding: 5px 8px; color: #475467; background: #f2f4f3; font-size: .7rem; font-weight: 900; }
 .status.active, .status.confirmed, .status.done, .status.paid { color: #067647; background: #dcfae6; }
 .status.inactive, .status.cancelled, .status.noshow { color: #b42318; background: #fee4e2; }

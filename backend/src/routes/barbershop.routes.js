@@ -15,7 +15,7 @@ const {
   verifyPassword
 } = require("../data/store");
 const { buildAppointmentMessage, sendWhatsAppMessage, waMeUrl } = require("../services/whatsapp.service");
-const { resolveUploadedImageUrl } = require("../services/image-storage.service");
+const { deleteStoredImageByUrl, getStoredImage, resolveUploadedImageUrl } = require("../services/image-storage.service");
 const { sendPasswordResetEmail } = require("../services/email.service");
 
 const router = Router();
@@ -418,6 +418,36 @@ function systemBundle(db, user) {
   };
 }
 
+async function replaceStoredPhoto(currentUrl, nextUrl) {
+  if (currentUrl && currentUrl !== nextUrl) await deleteStoredImageByUrl(currentUrl);
+}
+
+function removeBusinessesFromDb(db, businessIds) {
+  const ids = new Set(businessIds);
+  const photoUrls = [];
+  const removedOwnerIds = new Set(db.businesses.filter(item => ids.has(item.id)).map(item => item.ownerId).filter(Boolean));
+  db.businesses
+    .filter(item => ids.has(item.id) && item.photoUrl)
+    .forEach(item => photoUrls.push(item.photoUrl));
+  db.professionals
+    .filter(item => ids.has(item.businessId) && item.photoUrl)
+    .forEach(item => photoUrls.push(item.photoUrl));
+
+  db.businesses = db.businesses.filter(item => !ids.has(item.id));
+  db.professionals = db.professionals.filter(item => !ids.has(item.businessId));
+  db.services = db.services.filter(item => !ids.has(item.businessId));
+  db.appointments = db.appointments.filter(item => !ids.has(item.businessId));
+  db.payments = (db.payments || []).filter(item => !ids.has(item.businessId));
+  db.waitlist = db.waitlist.filter(item => !ids.has(item.businessId));
+  db.blocks = db.blocks.filter(item => !ids.has(item.businessId));
+  db.reminders = (db.reminders || []).filter(item => !ids.has(item.businessId));
+
+  db.users = db.users.map(user => ids.has(user.businessId) || removedOwnerIds.has(user.id)
+    ? { ...user, businessId: "", role: user.role === "owner" ? "business_admin" : user.role }
+    : user);
+  return photoUrls;
+}
+
 function requireSystemAdmin(req, res, next) {
   if (req.user && req.user.role === "system_admin") return next();
   return res.status(403).json({ message: "Acesso permitido apenas para administradores gerais." });
@@ -710,21 +740,27 @@ router.patch("/system/businesses/:id/active", auth, requireSystemAdmin, async (r
   res.json(result);
 });
 
-router.delete("/system/businesses/:id", auth, requireSystemAdmin, async (req, res) => {
-  await updateDb(db => {
-    const business = db.businesses.find(item => item.id === req.params.id);
-    db.businesses = db.businesses.filter(item => item.id !== req.params.id);
-    db.professionals = db.professionals.filter(item => item.businessId !== req.params.id);
-    db.services = db.services.filter(item => item.businessId !== req.params.id);
-    db.appointments = db.appointments.filter(item => item.businessId !== req.params.id);
-    db.payments = (db.payments || []).filter(item => item.businessId !== req.params.id);
-    db.waitlist = db.waitlist.filter(item => item.businessId !== req.params.id);
-    db.blocks = db.blocks.filter(item => item.businessId !== req.params.id);
-    db.reminders = (db.reminders || []).filter(item => item.businessId !== req.params.id);
-    db.users = db.users.map(user => user.businessId === req.params.id || (business && business.ownerId === user.id)
-      ? { ...user, businessId: "", role: user.role === "owner" ? "business_admin" : user.role }
-      : user);
+router.post("/system/businesses/bulk-delete", auth, requireSystemAdmin, async (req, res) => {
+  const ids = Array.isArray(req.body.ids) ? req.body.ids.map(item => String(item || "").trim()).filter(Boolean) : [];
+  if (!ids.length) return res.status(400).json({ message: "Selecione ao menos um negócio para remover." });
+  const photoUrls = [];
+  const result = await updateDb(db => {
+    const existingIds = ids.filter(idValue => db.businesses.some(business => business.id === idValue));
+    if (!existingIds.length) return { status: 404, error: "Nenhum negócio selecionado foi encontrado." };
+    photoUrls.push(...removeBusinessesFromDb(db, existingIds));
+    return { removed: existingIds.length };
   });
+  if (result.error) return res.status(result.status || 400).json({ message: result.error });
+  for (const photoUrl of photoUrls) await deleteStoredImageByUrl(photoUrl);
+  res.json(result);
+});
+
+router.delete("/system/businesses/:id", auth, requireSystemAdmin, async (req, res) => {
+  const photoUrls = [];
+  await updateDb(db => {
+    photoUrls.push(...removeBusinessesFromDb(db, [req.params.id]));
+  });
+  for (const photoUrl of photoUrls) await deleteStoredImageByUrl(photoUrl);
   res.status(204).end();
 });
 
@@ -738,6 +774,17 @@ router.delete("/system/users/:id", auth, requireSystemAdmin, async (req, res) =>
     db.sessions = db.sessions.filter(session => session.userId !== req.params.id);
   });
   res.status(204).end();
+});
+
+router.get("/images/:id", async (req, res) => {
+  const image = await getStoredImage(req.params.id);
+  if (!image) return res.status(404).json({ message: "Imagem não encontrada." });
+  res.set({
+    "Content-Type": image.mime_type,
+    "Content-Length": String(image.byte_size),
+    "Cache-Control": "public, max-age=31536000, immutable"
+  });
+  res.end(image.data);
 });
 
 router.get("/public/:slug", async (req, res) => {
@@ -1057,31 +1104,42 @@ router.post("/admin/business/photo", auth, upload.single("photo"), async (req, r
   if (!req.file) return res.status(400).json({ message: "Envie uma imagem valida." });
 
   const photoUrl = await resolveUploadedImageUrl(req.file);
-  const result = await updateDb(db => {
-    const business = db.businesses.find(item => item.id === req.business.id);
-    business.photoUrl = photoUrl;
-    return { business: publicBusiness(business), photoUrl };
-  });
-
-  res.status(201).json(result);
+  let oldPhotoUrl = "";
+  try {
+    const result = await updateDb(db => {
+      const business = db.businesses.find(item => item.id === req.business.id);
+      oldPhotoUrl = business.photoUrl || "";
+      business.photoUrl = photoUrl;
+      return { business: publicBusiness(business), photoUrl };
+    });
+    await replaceStoredPhoto(oldPhotoUrl, photoUrl);
+    res.status(201).json(result);
+  } catch (error) {
+    await deleteStoredImageByUrl(photoUrl);
+    throw error;
+  }
 });
 
 router.put("/admin/business", auth, async (req, res) => {
   const permissionError = requirePermission(req, "settings");
   if (permissionError) return res.status(permissionError.status).json({ message: permissionError.error });
+  let oldPhotoUrl = "";
+  let nextPhotoUrl = "";
   const result = await updateDb(db => {
     const business = db.businesses.find(item => item.id === req.business.id);
     const nextSlug = slugify(req.body.slug || business.slug);
     if (db.businesses.some(item => item.id !== business.id && item.slug === nextSlug)) {
       return { status: 409, error: "Identificador do negócio já está em uso." };
     }
+    oldPhotoUrl = business.photoUrl || "";
+    nextPhotoUrl = String(req.body.photoUrl || "").trim();
     business.name = String(req.body.name || business.name).trim();
     business.slug = nextSlug;
     business.whatsapp = onlyNumbers(req.body.whatsapp || business.whatsapp);
     business.businessType = String(req.body.businessType || business.businessType || "Outro").trim().slice(0, 60) || "Outro";
     business.address = String(req.body.address || "").trim();
     business.description = String(req.body.description || "").trim().slice(0, 150);
-    business.photoUrl = String(req.body.photoUrl || "").trim();
+    business.photoUrl = nextPhotoUrl;
     business.theme = sanitizeTheme(req.body.theme, business.theme);
     business.deposit = Number(req.body.deposit || 0);
     business.pixKey = String(req.body.pixKey || "").trim();
@@ -1092,6 +1150,7 @@ router.put("/admin/business", auth, async (req, res) => {
     return { business: publicBusiness(business) };
   });
   if (result.error) return res.status(result.status || 400).json({ message: result.error });
+  await replaceStoredPhoto(oldPhotoUrl, nextPhotoUrl);
   res.json(result);
 });
 
@@ -1140,29 +1199,43 @@ router.post("/admin/professionals/:id/photo", auth, upload.single("photo"), asyn
   if (!req.file) return res.status(400).json({ message: "Envie uma imagem valida." });
 
   const photoUrl = await resolveUploadedImageUrl(req.file);
-  const result = await updateDb(db => {
-    const professional = db.professionals.find(item => item.businessId === req.business.id && item.id === req.params.id);
-    if (!professional) return { status: 404, error: "Profissional nao encontrado." };
-    professional.photoUrl = photoUrl;
-    return { professional: publicProfessional(professional), photoUrl };
-  });
+  let oldPhotoUrl = "";
+  try {
+    const result = await updateDb(db => {
+      const professional = db.professionals.find(item => item.businessId === req.business.id && item.id === req.params.id);
+      if (!professional) return { status: 404, error: "Profissional nao encontrado." };
+      oldPhotoUrl = professional.photoUrl || "";
+      professional.photoUrl = photoUrl;
+      return { professional: publicProfessional(professional), photoUrl };
+    });
 
-  if (result.error) return res.status(result.status || 400).json({ message: result.error });
-  res.status(201).json(result);
+    if (result.error) {
+      await deleteStoredImageByUrl(photoUrl);
+      return res.status(result.status || 400).json({ message: result.error });
+    }
+    await replaceStoredPhoto(oldPhotoUrl, photoUrl);
+    res.status(201).json(result);
+  } catch (error) {
+    await deleteStoredImageByUrl(photoUrl);
+    throw error;
+  }
 });
 
 router.delete("/admin/professionals/:id/photo", auth, async (req, res) => {
   const permissionError = requirePermission(req, "professionals");
   if (permissionError) return res.status(permissionError.status).json({ message: permissionError.error });
 
+  let oldPhotoUrl = "";
   const result = await updateDb(db => {
     const professional = db.professionals.find(item => item.businessId === req.business.id && item.id === req.params.id);
     if (!professional) return { status: 404, error: "Profissional nao encontrado." };
+    oldPhotoUrl = professional.photoUrl || "";
     professional.photoUrl = "";
     return { professional: publicProfessional(professional) };
   });
 
   if (result.error) return res.status(result.status || 400).json({ message: result.error });
+  await deleteStoredImageByUrl(oldPhotoUrl);
   res.json(result);
 });
 
@@ -1200,14 +1273,18 @@ router.patch("/admin/professionals/:id/active", auth, async (req, res) => {
 });
 
 router.delete("/admin/professionals/:id", auth, async (req, res) => {
+  let oldPhotoUrl = "";
   const result = await updateDb(db => {
     const hasAppointment = db.appointments.some(item => item.businessId === req.business.id && item.professionalId === req.params.id);
     if (hasAppointment) return { status: 409, error: "Profissional possui historico de agendamentos e nao pode ser excluido. Desative futuramente em vez de excluir." };
+    const professional = db.professionals.find(item => item.id === req.params.id && item.businessId === req.business.id);
+    oldPhotoUrl = professional ? professional.photoUrl || "" : "";
     db.services = db.services.filter(item => item.professionalId !== req.params.id || item.businessId !== req.business.id);
     db.professionals = db.professionals.filter(item => item.id !== req.params.id || item.businessId !== req.business.id);
     return {};
   });
   if (result.error) return res.status(result.status || 400).json({ message: result.error });
+  await deleteStoredImageByUrl(oldPhotoUrl);
   res.status(204).end();
 });
 

@@ -1,4 +1,4 @@
-import { FormEvent, ReactNode, useEffect } from "react";
+import { FormEvent, ReactNode, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { ApiError, api, slugify } from "../api";
@@ -61,7 +61,14 @@ function SystemDashboard({ bundle }: { bundle: SystemBundle }) {
   const createUser = useSystemMutation<Record<string, unknown>>(payload => api("/system/users", { method: "POST", body: JSON.stringify(payload) }));
   const toggleBusiness = useSystemMutation<{ id: string; active: boolean }>(({ id, active }) => api(`/system/businesses/${id}/active`, { method: "PATCH", body: JSON.stringify({ active }) }));
   const removeBusiness = useSystemMutation<string>(id => api(`/system/businesses/${id}`, { method: "DELETE" }));
+  const removeSelectedBusinesses = useSystemMutation<string[]>(ids => api("/system/businesses/bulk-delete", { method: "POST", body: JSON.stringify({ ids }) }));
   const removeUser = useSystemMutation<string>(id => api(`/system/users/${id}`, { method: "DELETE" }));
+  const [selectedBusinessIds, setSelectedBusinessIds] = useState<string[]>([]);
+  const allSelected = bundle.businesses.length > 0 && selectedBusinessIds.length === bundle.businesses.length;
+
+  useEffect(() => {
+    setSelectedBusinessIds(current => current.filter(id => bundle.businesses.some(business => business.id === id)));
+  }, [bundle.businesses]);
 
   function submitBusiness(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -89,6 +96,21 @@ function SystemDashboard({ bundle }: { bundle: SystemBundle }) {
       role: form.get("role"),
       businessId: form.get("businessId")
     }, { onSuccess: () => formElement.reset() });
+  }
+
+  function toggleSelectedBusiness(id: string) {
+    setSelectedBusinessIds(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id]);
+  }
+
+  function toggleAllBusinesses() {
+    setSelectedBusinessIds(allSelected ? [] : bundle.businesses.map(business => business.id));
+  }
+
+  function removeSelected() {
+    const total = selectedBusinessIds.length;
+    if (!total) return;
+    if (!confirm(`Remover ${total} negócio${total > 1 ? "s" : ""} selecionado${total > 1 ? "s" : ""} e seus dados?`)) return;
+    removeSelectedBusinesses.mutate(selectedBusinessIds, { onSuccess: () => setSelectedBusinessIds([]) });
   }
 
   return (
@@ -143,9 +165,20 @@ function SystemDashboard({ bundle }: { bundle: SystemBundle }) {
       </Panel>
 
       <Panel title="Negócios">
+        <div className="bulk-actions">
+          <label className="inline-check"><input type="checkbox" checked={allSelected} onChange={toggleAllBusinesses} /> Selecionar todos</label>
+          <span>{selectedBusinessIds.length} selecionado{selectedBusinessIds.length === 1 ? "" : "s"}</span>
+          <button className="button danger" type="button" onClick={removeSelected} disabled={!selectedBusinessIds.length || removeSelectedBusinesses.isPending}>
+            {removeSelectedBusinesses.isPending ? "Removendo..." : "Remover selecionados"}
+          </button>
+        </div>
+        <MutationMessage mutation={removeSelectedBusinesses} />
         <div className="table-list">
           {bundle.businesses.map(business => (
             <div className="row-item" key={business.id}>
+              <label className="row-select" aria-label={`Selecionar ${business.name}`}>
+                <input type="checkbox" checked={selectedBusinessIds.includes(business.id)} onChange={() => toggleSelectedBusiness(business.id)} />
+              </label>
               <span><strong>{business.name}</strong><small>/{business.slug} · {business.users} usuários · {business.professionals} profissionais · {business.appointments} agendamentos</small></span>
               <span className={`status ${business.active ? "active" : "inactive"}`}>{business.active ? "Liberado" : "Bloqueado"}</span>
               <div className="actions">
