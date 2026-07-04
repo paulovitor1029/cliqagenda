@@ -1,8 +1,8 @@
-import { FormEvent, ReactNode, useEffect } from "react";
+import { CSSProperties, ChangeEvent, FormEvent, ReactNode, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ApiError, api, formatDate, money } from "../api";
-import type { AdminBundle, Appointment, Business, Professional, Service } from "../types";
+import type { AdminBundle, Appointment, Business, Professional, Service, Theme } from "../types";
 
 const sections = [
   ["dashboard", "Resumo"],
@@ -11,12 +11,18 @@ const sections = [
   ["services", "Serviços"],
   ["appointments", "Agenda"],
   ["blocks", "Bloqueios"],
+  ["customization", "Personalização"],
   ["finance", "Financeiro"],
   ["users", "Usuários"],
   ["clients", "Clientes"]
 ] as const;
 
 type Section = typeof sections[number][0];
+type PendingPhotoCrop = {
+  file: File;
+  title: string;
+  onComplete: (file: File) => void;
+};
 
 export function AdminPage() {
   const navigate = useNavigate();
@@ -53,17 +59,20 @@ export function AdminPage() {
   if (!adminQuery.data) return null;
 
   const bundle = adminQuery.data;
+  const adminTheme = themeStyle(bundle.business.theme);
   const visibleSections = sections.filter(([key]) => {
     if (bundle.user.role === "owner" || key === "dashboard") return true;
     return bundle.user.permissions?.[key] !== false;
   });
 
   return (
-    <div className="admin-shell">
+    <div className="admin-shell" style={adminTheme}>
       <aside className="admin-sidebar">
-        <div className="brand admin-brand">
-          <span className="brand-mark">{bundle.business.name.slice(0, 2).toUpperCase()}</span>
-          <span><strong>{bundle.business.name}</strong><small>{bundle.user.email}</small></span>
+        <div className="admin-brand">
+          <span className={`admin-brand-avatar ${bundle.business.photoUrl ? "has-photo" : ""}`}>
+            {bundle.business.photoUrl ? <img src={bundle.business.photoUrl} alt={bundle.business.name} /> : <i aria-hidden="true" />}
+          </span>
+          <span className="admin-brand-copy"><strong>{bundle.business.name}</strong><small>{bundle.user.email}</small></span>
         </div>
         <nav>
           {visibleSections.map(([key, label]) => (
@@ -90,6 +99,7 @@ function SectionContent({ section, bundle }: { section: Section; bundle: AdminBu
     case "services": return <ServicesSection bundle={bundle} />;
     case "appointments": return <AppointmentsSection appointments={bundle.appointments} />;
     case "blocks": return <BlocksSection bundle={bundle} />;
+    case "customization": return <CustomizationSection bundle={bundle} />;
     case "finance": return <FinanceSection bundle={bundle} />;
     case "users": return <UsersSection bundle={bundle} />;
     case "clients": return <ClientsSection appointments={bundle.appointments} waitlist={bundle.waitlist} />;
@@ -103,6 +113,38 @@ function useAdminMutation<TVariables>(mutationFn: (variables: TVariables) => Pro
     mutationFn,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin"] })
   });
+}
+
+function themeStyle(theme: Theme = {}) {
+  return {
+    "--primary": theme.primary || "#16a34a",
+    "--primary-dark": theme.primaryDark || "#15803d",
+    "--app-bg": theme.background || "#f5f7f6",
+    "--card": theme.card || "#ffffff",
+    "--text": theme.text || "#172033",
+    "--muted": theme.muted || "#667085",
+    "--line": theme.line || "#dde4e1"
+  } as CSSProperties;
+}
+
+function businessPayload(business: Business, overrides: Partial<Business> = {}) {
+  const next = { ...business, ...overrides };
+  return {
+    name: next.name,
+    slug: next.slug,
+    businessType: next.businessType,
+    whatsapp: next.whatsapp,
+    address: next.address,
+    description: next.description,
+    deposit: next.deposit,
+    pixKey: next.pixKey,
+    cancellationHours: next.cancellationHours,
+    rescheduleHours: next.rescheduleHours,
+    allowClientCancel: next.allowClientCancel,
+    allowClientReschedule: next.allowClientReschedule,
+    photoUrl: next.photoUrl,
+    theme: next.theme
+  };
 }
 
 function DashboardSection({ bundle }: { bundle: AdminBundle }) {
@@ -134,16 +176,14 @@ function BusinessSection({ business }: { business: Business }) {
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    mutation.mutate({
+    mutation.mutate(businessPayload(business, {
       name: form.get("name"), slug: form.get("slug"), businessType: form.get("businessType"),
       whatsapp: form.get("whatsapp"), address: form.get("address"), description: form.get("description"),
       deposit: Number(form.get("deposit")), pixKey: form.get("pixKey"),
       cancellationHours: Number(form.get("cancellationHours")), rescheduleHours: Number(form.get("rescheduleHours")),
       allowClientCancel: form.get("allowClientCancel") === "on",
-      allowClientReschedule: form.get("allowClientReschedule") === "on",
-      photoUrl: business.photoUrl,
-      theme: business.theme
-    });
+      allowClientReschedule: form.get("allowClientReschedule") === "on"
+    } as Partial<Business>));
   }
 
   return (
@@ -178,10 +218,253 @@ function BusinessSection({ business }: { business: Business }) {
   );
 }
 
+function CustomizationSection({ bundle }: { bundle: AdminBundle }) {
+  const { business } = bundle;
+  const updateTheme = useAdminMutation<Record<string, unknown>>(payload => api("/admin/business", { method: "PUT", body: JSON.stringify(payload) }));
+  const uploadBusinessPhoto = useAdminMutation<FormData>(form => api("/admin/business/photo", { method: "POST", body: form }));
+  const defaultTheme = {
+    primary: "#16a34a",
+    primaryDark: "#15803d",
+    background: "#f5f7f6",
+    card: "#ffffff",
+    text: "#172033",
+    muted: "#667085",
+    line: "#dde4e1"
+  };
+  const currentTheme = {
+    primary: business.theme.primary || "#16a34a",
+    primaryDark: business.theme.primaryDark || "#15803d",
+    background: business.theme.background || "#f5f7f6",
+    card: business.theme.card || "#ffffff",
+    text: business.theme.text || "#172033",
+    muted: business.theme.muted || "#667085",
+    line: business.theme.line || "#dde4e1"
+  };
+  const [themeDraft, setThemeDraft] = useState(currentTheme);
+  const [pendingPhotoCrop, setPendingPhotoCrop] = useState<PendingPhotoCrop | null>(null);
+
+  function submitTheme(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    updateTheme.mutate(businessPayload(business, { theme: themeDraft }));
+  }
+
+  function selectBusinessPhoto(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setPendingPhotoCrop({
+      file,
+      title: "Ajustar foto do negócio",
+      onComplete: croppedFile => {
+        const form = new FormData();
+        form.append("photo", croppedFile);
+        uploadBusinessPhoto.mutate(form);
+      }
+    });
+  }
+
+  function removeBusinessPhoto() {
+    updateTheme.mutate(businessPayload(business, { photoUrl: "" }));
+  }
+
+  function resetTheme() {
+    setThemeDraft(defaultTheme);
+    updateTheme.mutate(businessPayload(business, { theme: defaultTheme }));
+  }
+
+  return (
+    <Panel title="Personalização do negócio" description="Cores e imagem usadas no painel administrativo e na página pública.">
+      <div className="customization-grid">
+        <div className="photo-manager">
+          {business.photoUrl
+            ? <img src={business.photoUrl} alt={business.name} />
+            : <span>{business.name.slice(0, 2).toUpperCase()}</span>}
+          <div>
+            <h3>Foto do negócio</h3>
+            <div className="actions">
+              <label className="button secondary file-button">
+                Escolher foto
+                <input type="file" accept="image/jpeg,image/png,image/webp" onChange={selectBusinessPhoto} />
+              </label>
+              {business.photoUrl && <button className="button danger" type="button" onClick={removeBusinessPhoto}>Remover</button>}
+            </div>
+          </div>
+        </div>
+
+        <form className="theme-form" onSubmit={submitTheme}>
+          <ColorField label="Principal" info="Afeta botões principais, item ativo do menu, seleção de horários, destaques e elementos de ação da página pública." value={themeDraft.primary} onChange={value => setThemeDraft(current => ({ ...current, primary: value }))} />
+          <ColorField label="Principal escura" info="Afeta marca, textos de destaque, links, estados de foco e variações mais fortes da cor principal." value={themeDraft.primaryDark} onChange={value => setThemeDraft(current => ({ ...current, primaryDark: value }))} />
+          <ColorField label="Fundo" info="Afeta o fundo geral do painel administrativo e da página pública do cliente." value={themeDraft.background} onChange={value => setThemeDraft(current => ({ ...current, background: value }))} />
+          <ColorField label="Cartões" info="Afeta cartões, painéis, sidebar, campos e áreas elevadas do painel e da página pública." value={themeDraft.card} onChange={value => setThemeDraft(current => ({ ...current, card: value }))} />
+          <ColorField label="Texto" info="Afeta textos principais, títulos, nomes do negócio, nomes de profissionais e conteúdo de destaque." value={themeDraft.text} onChange={value => setThemeDraft(current => ({ ...current, text: value }))} />
+          <ColorField label="Texto secundário" info="Afeta descrições, e-mails, detalhes, textos auxiliares e informações menos importantes." value={themeDraft.muted} onChange={value => setThemeDraft(current => ({ ...current, muted: value }))} />
+          <ColorField label="Bordas" info="Afeta bordas de cartões, campos, divisórias, blocos de foto e separadores da interface." value={themeDraft.line} onChange={value => setThemeDraft(current => ({ ...current, line: value }))} />
+          <div className="theme-actions">
+            <SubmitButton pending={updateTheme.isPending}>Salvar cores</SubmitButton>
+            <button className="button secondary" type="button" onClick={resetTheme} disabled={updateTheme.isPending}>Redefinir padrão</button>
+          </div>
+        </form>
+      </div>
+      <MutationMessage mutation={updateTheme} />
+      <MutationMessage mutation={uploadBusinessPhoto} />
+      {pendingPhotoCrop && <ImageCropModal pending={pendingPhotoCrop} onClose={() => setPendingPhotoCrop(null)} />}
+    </Panel>
+  );
+}
+
+function ColorField({ label, info, value, onChange }: { label: string; info: string; value: string; onChange: (value: string) => void }) {
+  const [text, setText] = useState(value);
+
+  useEffect(() => {
+    setText(value);
+  }, [value]);
+
+  return (
+    <label className="color-field">
+      <span className="color-label">
+        {label}
+        <button className="info-tip" type="button" aria-label={`Informação sobre ${label}`}>
+          i
+          <span role="tooltip">{info}</span>
+        </button>
+      </span>
+      <span>
+        <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(value) ? value : "#16a34a"} onChange={event => onChange(event.target.value)} />
+        <input
+          value={text}
+          onBlur={() => setText(value)}
+          onChange={event => {
+            const next = event.target.value;
+            setText(next);
+            if (/^#[0-9a-fA-F]{6}$/.test(next)) onChange(next);
+          }}
+          pattern="#[0-9a-fA-F]{6}"
+          required
+        />
+      </span>
+    </label>
+  );
+}
+
+function ImageCropModal({ pending, onClose }: { pending: PendingPhotoCrop; onClose: () => void }) {
+  const [source, setSource] = useState("");
+  const [zoom, setZoom] = useState(1.15);
+  const [offsetX, setOffsetX] = useState(0);
+  const [offsetY, setOffsetY] = useState(0);
+  const [isSaving, setIsSaving] = useState(false);
+  const transform = `translate(calc(-50% + ${offsetX}px), calc(-50% + ${offsetY}px)) scale(${zoom})`;
+
+  useEffect(() => {
+    const url = URL.createObjectURL(pending.file);
+    setSource(url);
+    setZoom(1.15);
+    setOffsetX(0);
+    setOffsetY(0);
+    return () => URL.revokeObjectURL(url);
+  }, [pending.file]);
+
+  async function completeCrop() {
+    setIsSaving(true);
+    try {
+      const croppedFile = await cropImage(pending.file, zoom, offsetX, offsetY);
+      pending.onComplete(croppedFile);
+      onClose();
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="crop-title">
+      <div className="crop-modal">
+        <header>
+          <h2 id="crop-title">{pending.title}</h2>
+          <button className="icon-button" type="button" onClick={onClose} aria-label="Fechar">×</button>
+        </header>
+        <div className="crop-workspace">
+          <div className="crop-frame">
+            {source && <img src={source} alt="" style={{ transform }} />}
+          </div>
+          <div className="crop-controls">
+            <label>Zoom<input type="range" min="1" max="3" step="0.01" value={zoom} onChange={event => setZoom(Number(event.target.value))} /></label>
+            <label>Horizontal<input type="range" min="-120" max="120" step="1" value={offsetX} onChange={event => setOffsetX(Number(event.target.value))} /></label>
+            <label>Vertical<input type="range" min="-120" max="120" step="1" value={offsetY} onChange={event => setOffsetY(Number(event.target.value))} /></label>
+          </div>
+        </div>
+        <footer>
+          <button className="button secondary" type="button" onClick={onClose}>Cancelar</button>
+          <button className="button primary" type="button" onClick={completeCrop} disabled={isSaving}>{isSaving ? "Processando..." : "Concluir"}</button>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+async function cropImage(file: File, zoom: number, offsetX: number, offsetY: number) {
+  const bitmap = await createImageBitmap(file);
+  const size = 900;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Não foi possível processar a imagem.");
+
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, size, size);
+
+  const baseScale = Math.max(size / bitmap.width, size / bitmap.height);
+  const drawWidth = bitmap.width * baseScale * zoom;
+  const drawHeight = bitmap.height * baseScale * zoom;
+  const dx = (size - drawWidth) / 2 + (offsetX / 120) * (size / 2);
+  const dy = (size - drawHeight) / 2 + (offsetY / 120) * (size / 2);
+  context.drawImage(bitmap, dx, dy, drawWidth, drawHeight);
+  bitmap.close();
+
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(result => result ? resolve(result) : reject(new Error("Não foi possível processar a imagem.")), "image/jpeg", 0.88);
+  });
+  const name = file.name.replace(/\.[^.]+$/, "") || "foto";
+  return new File([blob], `${name}-ajustada.jpg`, { type: "image/jpeg" });
+}
+
 function ProfessionalsSection({ bundle }: { bundle: AdminBundle }) {
-  const create = useAdminMutation<Record<string, unknown>>(payload => api("/admin/professionals", { method: "POST", body: JSON.stringify(payload) }));
+  const queryClient = useQueryClient();
+  const create = useMutation({
+    mutationFn: async (payload: { name: string; specialty: FormDataEntryValue | null; workingHours: string[]; workingDays: number[]; photo: File | null }) => {
+      const { photo, ...professionalPayload } = payload;
+      const created = await api<{ professional: Professional }>("/admin/professionals", { method: "POST", body: JSON.stringify(professionalPayload) });
+      if (photo) {
+        const form = new FormData();
+        form.append("photo", photo);
+        await api(`/admin/professionals/${created.professional.id}/photo`, { method: "POST", body: form });
+      }
+      return created;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin"] })
+  });
   const toggle = useAdminMutation<{ id: string; active: boolean }>(({ id, active }) => api(`/admin/professionals/${id}/active`, { method: "PATCH", body: JSON.stringify({ active }) }));
   const remove = useAdminMutation<string>(id => api(`/admin/professionals/${id}`, { method: "DELETE" }));
+  const uploadProfessionalPhoto = useAdminMutation<{ id: string; form: FormData }>(({ id, form }) => api(`/admin/professionals/${id}/photo`, { method: "POST", body: form }));
+  const removeProfessionalPhoto = useAdminMutation<string>(id => api(`/admin/professionals/${id}/photo`, { method: "DELETE" }));
+  const defaultHours = bundle.business.workingHours.length ? bundle.business.workingHours : ["09:00", "09:30", "10:00", "10:30", "11:00"];
+  const [workingHours, setWorkingHours] = useState(defaultHours);
+  const [newPhotoPreview, setNewPhotoPreview] = useState("");
+  const [newPhotoFile, setNewPhotoFile] = useState<File | null>(null);
+  const [pendingPhotoCrop, setPendingPhotoCrop] = useState<PendingPhotoCrop | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (newPhotoPreview.startsWith("blob:")) URL.revokeObjectURL(newPhotoPreview);
+    };
+  }, [newPhotoPreview]);
+
+  function addWorkingHour(value: string) {
+    setWorkingHours(current => [...new Set([...current, value])].sort());
+  }
+
+  function removeWorkingHour(value: string) {
+    setWorkingHours(current => current.filter(item => item !== value));
+  }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -191,19 +474,62 @@ function ProfessionalsSection({ bundle }: { bundle: AdminBundle }) {
     create.mutate({
       name,
       specialty: form.get("specialty"),
-      workingHours: String(form.get("workingHours") || "").split(/[\s,;]+/).filter(Boolean),
-      workingDays: [1, 2, 3, 4, 5, 6]
-    }, { onSuccess: () => formElement.reset() });
+      workingHours,
+      workingDays: [1, 2, 3, 4, 5, 6],
+      photo: newPhotoFile
+    }, { onSuccess: () => { formElement.reset(); setWorkingHours(defaultHours); setNewPhotoPreview(""); setNewPhotoFile(null); } });
+  }
+
+  function selectNewProfessionalPhoto(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      setNewPhotoPreview("");
+      setNewPhotoFile(null);
+      return;
+    }
+    setPendingPhotoCrop({
+      file,
+      title: "Ajustar foto do profissional",
+      onComplete: croppedFile => {
+        setNewPhotoFile(croppedFile);
+        setNewPhotoPreview(URL.createObjectURL(croppedFile));
+      }
+    });
+  }
+
+  function selectProfessionalPhoto(professionalId: string, event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setPendingPhotoCrop({
+      file,
+      title: "Ajustar foto do profissional",
+      onComplete: croppedFile => {
+        const form = new FormData();
+        form.append("photo", croppedFile);
+        uploadProfessionalPhoto.mutate({ id: professionalId, form });
+      }
+    });
   }
 
   return (
     <>
       <Panel title="Cadastrar profissional" description={`Todos os profissionais são acessados pelo link do negócio: ${window.location.origin}/p/${bundle.business.slug}`}>
-        <form className="form-grid" onSubmit={submit}>
-          <label>Nome<input name="name" required /></label>
-          <label>Especialidade<input name="specialty" /></label>
-          <label>Horários<input name="workingHours" placeholder="09:00, 09:30, 10:00" required /></label>
-          <SubmitButton pending={create.isPending}>Cadastrar</SubmitButton>
+        <form className="professional-create-form" onSubmit={submit}>
+          <label className="profile-photo-input">
+            <span className={newPhotoPreview ? "has-preview" : ""}>
+              {newPhotoPreview ? <img src={newPhotoPreview} alt="" /> : <i aria-hidden="true" />}
+            </span>
+            <strong>Foto</strong>
+            <input name="photo" type="file" accept="image/jpeg,image/png,image/webp" onChange={selectNewProfessionalPhoto} />
+          </label>
+          <div className="professional-fields">
+            <label>Nome<input name="name" required /></label>
+            <label>Especialidade<input name="specialty" /></label>
+            <SubmitButton pending={create.isPending}>Cadastrar</SubmitButton>
+          </div>
+          <WorkingHoursPicker hours={workingHours} onAdd={addWorkingHour} onRemove={removeWorkingHour} />
         </form>
         <MutationMessage mutation={create} />
         <div className="public-link business-public-link">
@@ -216,19 +542,54 @@ function ProfessionalsSection({ bundle }: { bundle: AdminBundle }) {
         {!bundle.professionals.length && <div className="empty-state">Nenhum profissional cadastrado no banco.</div>}
         {bundle.professionals.map(professional => (
             <article className="card list-card" key={professional.id}>
-              <div>
-                <span className={`status ${professional.active ? "active" : "inactive"}`}>{professional.active ? "Ativo" : "Inativo"}</span>
-                <h3>{professional.name}</h3>
-                <p>{professional.specialty || "Sem especialidade informada"}</p>
+              <div className="professional-summary">
+                {professional.photoUrl
+                  ? <img src={professional.photoUrl} alt={professional.name} />
+                  : <span>{professional.name.slice(0, 2).toUpperCase()}</span>}
+                <div>
+                  <span className={`status ${professional.active ? "active" : "inactive"}`}>{professional.active ? "Ativo" : "Inativo"}</span>
+                  <h3>{professional.name}</h3>
+                  <p>{professional.specialty || "Sem especialidade informada"}</p>
+                  <small>{professional.workingHours.length ? professional.workingHours.join(", ") : "Horários do negócio"}</small>
+                </div>
               </div>
               <div className="actions">
+                <label className="button secondary file-button">
+                  Foto
+                  <input type="file" accept="image/jpeg,image/png,image/webp" onChange={event => selectProfessionalPhoto(professional.id, event)} />
+                </label>
+                {professional.photoUrl && <button className="button secondary" type="button" onClick={() => removeProfessionalPhoto.mutate(professional.id)}>Remover foto</button>}
                 <button className="button secondary" onClick={() => toggle.mutate({ id: professional.id, active: !professional.active })}>{professional.active ? "Desativar" : "Ativar"}</button>
                 <button className="button danger" onClick={() => confirm("Excluir este profissional?") && remove.mutate(professional.id)}>Excluir</button>
               </div>
             </article>
         ))}
       </div>
+      <MutationMessage mutation={uploadProfessionalPhoto} />
+      <MutationMessage mutation={removeProfessionalPhoto} />
+      {pendingPhotoCrop && <ImageCropModal pending={pendingPhotoCrop} onClose={() => setPendingPhotoCrop(null)} />}
     </>
+  );
+}
+
+function WorkingHoursPicker({ hours, onAdd, onRemove }: { hours: string[]; onAdd: (value: string) => void; onRemove: (value: string) => void }) {
+  const [nextHour, setNextHour] = useState("09:00");
+
+  return (
+    <fieldset className="hours-picker">
+      <legend>Horários</legend>
+      <div className="hours-picker-control">
+        <input type="time" value={nextHour} step="900" onChange={event => setNextHour(event.target.value)} />
+        <button className="button secondary" type="button" onClick={() => nextHour && onAdd(nextHour)}>Adicionar</button>
+      </div>
+      <div className="selected-hours" aria-live="polite">
+        {hours.map(hour => (
+          <button key={hour} type="button" onClick={() => onRemove(hour)} title={`Remover ${hour}`}>
+            {hour}
+          </button>
+        ))}
+      </div>
+    </fieldset>
   );
 }
 

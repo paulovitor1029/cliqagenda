@@ -60,10 +60,10 @@ const uploadStorage = multer.diskStorage({
 
 const upload = multer({
   storage: uploadStorage,
-  limits: { fileSize: 2 * 1024 * 1024 },
+  limits: { fileSize: 8 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (["image/jpeg", "image/png", "image/webp"].includes(file.mimetype)) return cb(null, true);
-    cb(new Error("Envie uma imagem JPG, PNG ou WEBP de ate 2 MB."));
+    cb(new Error("Envie uma imagem JPG, PNG ou WEBP."));
   }
 });
 

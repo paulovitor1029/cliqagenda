@@ -99,7 +99,12 @@ export function PublicBusinessPage() {
   const selectedProfessional = professionals.find(item => item.id === professionalId);
   const themeStyle = {
     "--primary": business.theme.primary || "#16a34a",
-    "--primary-dark": business.theme.primaryDark || "#15803d"
+    "--primary-dark": business.theme.primaryDark || "#15803d",
+    "--app-bg": business.theme.background || "#f4f7f5",
+    "--card": business.theme.card || "#ffffff",
+    "--text": business.theme.text || "#172033",
+    "--muted": business.theme.muted || "#667085",
+    "--line": business.theme.line || "#dde4e1"
   } as CSSProperties;
 
   function submitBooking(event: FormEvent<HTMLFormElement>) {
@@ -181,15 +186,14 @@ export function PublicBusinessPage() {
                   {availableServices.map(service => <option key={service.id} value={service.id}>{service.name} — {money(service.price)}</option>)}
                 </select>
               </label>
-              <div className="two-columns">
-                <label>Data<input type="date" value={date} min={new Date().toISOString().slice(0, 10)} onChange={event => setDate(event.target.value)} required /></label>
-                <label>Horário
-                  <select value={time} onChange={event => setTime(event.target.value)} disabled={!slotsQuery.data?.slots.length} required>
-                    {!slotsQuery.data?.slots.length && <option value="">Sem horários</option>}
-                    {slotsQuery.data?.slots.map(slot => <option key={slot}>{slot}</option>)}
-                  </select>
-                </label>
-              </div>
+              <label>Data<input type="date" value={date} min={new Date().toISOString().slice(0, 10)} onChange={event => setDate(event.target.value)} required /></label>
+              <TimeSlotPicker
+                label="Horário"
+                slots={slotsQuery.data?.slots || []}
+                value={time}
+                onChange={setTime}
+                emptyText={slotsQuery.isFetching ? "Buscando horários..." : "Sem horários para esta data"}
+              />
               <div className="two-columns">
                 <label>Seu nome<input name="customer" required /></label>
                 <label>WhatsApp<input name="phone" inputMode="numeric" required /></label>
@@ -225,7 +229,15 @@ export function PublicBusinessPage() {
               </div>
               <div className="two-columns">
                 <label>Data<input name="date" type="date" min={new Date().toISOString().slice(0, 10)} required /></label>
-                <label>Período<input name="period" placeholder="Ex.: tarde" required /></label>
+                <label>Período
+                  <select name="period" required>
+                    <option value="">Selecione</option>
+                    <option value="manhã">Manhã</option>
+                    <option value="tarde">Tarde</option>
+                    <option value="noite">Noite</option>
+                    <option value="qualquer horário">Qualquer horário</option>
+                  </select>
+                </label>
               </div>
               <button className="button secondary" disabled={waitlist.isPending}>Entrar na lista</button>
             </form>
@@ -238,4 +250,29 @@ export function PublicBusinessPage() {
 
 function LoadingPage() {
   return <main className="link-required-page"><div className="loading">Carregando agenda...</div></main>;
+}
+
+function TimeSlotPicker({ label, slots, value, onChange, emptyText }: { label: string; slots: string[]; value: string; onChange: (value: string) => void; emptyText: string }) {
+  return (
+    <fieldset className="time-picker">
+      <legend>{label}</legend>
+      {!slots.length ? (
+        <div className="time-picker-empty">{emptyText}</div>
+      ) : (
+        <div className="time-slot-grid">
+          {slots.map(slot => (
+            <button
+              key={slot}
+              type="button"
+              className={slot === value ? "selected" : ""}
+              aria-pressed={slot === value}
+              onClick={() => onChange(slot)}
+            >
+              {slot}
+            </button>
+          ))}
+        </div>
+      )}
+    </fieldset>
+  );
 }
